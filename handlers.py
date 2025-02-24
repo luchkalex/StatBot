@@ -221,33 +221,6 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
         await update_global_message(group_id, group_title, context)
         state.save_to_csv()  # Сохранение статистики в CSV файл
 
-async def start_tracking(update: Update, context: CallbackContext):
-    state.tracking_active = True
-    
-    # Используем update.message, если это не callback_query, а обычное сообщение
-    if update.message:
-        state.admin_chat_id = update.message.chat_id
-    elif update.callback_query and update.callback_query.message:
-        state.admin_chat_id = update.callback_query.message.chat_id
-    else:
-        logger.error("Ошибка: не удалось получить chat_id.")
-        return
-
-    state.stats.clear()
-    state.global_message_ids.clear()
-    state.load_from_csv()  # Загрузка статистики из CSV файла
-    
-    # Отправка всех имеющихся данных в виде группировки по темам
-    await send_grouped_stats(context)
-    
-    # Отправить новое сообщение с кнопкой "Стоп"
-    await update.message.reply_text(
-        "Статистика запущена",
-        reply_markup=get_stop_keyboard()  # Кнопка "Стоп"
-    ) if update.message else await update.callback_query.message.reply_text(
-        "Статистика запущена",
-        reply_markup=get_stop_keyboard()  # Кнопка "Стоп"
-    )
 
 
 
@@ -306,6 +279,38 @@ async def send_grouped_stats(context: CallbackContext):
 
 
 
+
+
+#--------------------------------BUTTON HANDLERS-------------------------------------
+async def start_tracking(update: Update, context: CallbackContext):
+    state.tracking_active = True
+
+    # Используем update.message, если это не callback_query, а обычное сообщение
+    if update.message:
+        state.admin_chat_id = update.message.chat_id
+    elif update.callback_query and update.callback_query.message:
+        state.admin_chat_id = update.callback_query.message.chat_id
+    else:
+        logger.error("Ошибка: не удалось получить chat_id.")
+        return
+
+    state.stats.clear()
+    state.global_message_ids.clear()
+    state.load_from_csv()  # Загрузка статистики из CSV файла
+
+    # Отправка всех имеющихся данных в виде группировки по темам
+    await send_grouped_stats(context)
+
+    # Отправить новое сообщение с кнопкой "Стоп"
+    await update.message.reply_text(
+        "Статистика запущена",
+        reply_markup=get_stop_keyboard()  # Кнопка "Стоп"
+    ) if update.message else await update.callback_query.message.reply_text(
+        "Статистика запущена",
+        reply_markup=get_stop_keyboard()  # Кнопка "Стоп"
+    )
+
+
 async def stop_tracking(update: Update, context: CallbackContext):
     state.tracking_active = False
     query = update.callback_query
@@ -321,10 +326,11 @@ async def stop_tracking(update: Update, context: CallbackContext):
     else:
         await update.message.reply_text("Статистика остановлена", reply_markup=get_start_keyboard())
 
+
 async def button_handler(update: Update, context: CallbackContext):
     query = update.callback_query
     await query.answer()
-    
+
     if query.data == "start_tracking":
         # Обрабатываем нажатие кнопки "Старт"
         await start_tracking(update, context)  # Запускаем отслеживание
@@ -346,17 +352,20 @@ def get_stop_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+
 def get_group_stats_keyboard(group_id):
     keyboard = [
         [InlineKeyboardButton("Статистика по пк", callback_data=f"group_stats_{group_id}")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
+
 def get_daily_stats_keyboard(group_id):
     keyboard = [
         [InlineKeyboardButton("Статистика", callback_data=f"daily_stats_{group_id}")]
     ]
     return InlineKeyboardMarkup(keyboard)
+
 
 def get_start_keyboard():
     logger.info(f"start keyboard")

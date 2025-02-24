@@ -3,7 +3,8 @@ import asyncio
 import nest_asyncio
 import logging
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
-from handlers import start_tracking, stop_tracking, button_handler, message_handler
+
+from handlers import message_handler, start_tracking, stop_tracking, button_handler
 from config import TELEGRAM_BOT_TOKEN
 
 nest_asyncio.apply()
