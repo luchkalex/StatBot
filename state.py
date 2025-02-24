@@ -1,5 +1,11 @@
+# state.py
 from datetime import timedelta
 from typing import Dict, Tuple
+import pandas as pd
+from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Типизация ключей: (group_id, topic_id, phone)
 StatsType = Dict[Tuple[int, int, str], dict]
@@ -14,8 +20,58 @@ class BotState:
         self.admin_chat_id: int = None
         self.stats: StatsType = {}              # (group_id, topic_id, phone) -> {"started": datetime, "stopped": datetime, "downtime": timedelta}
         self.topic_names: TopicNamesType = {}    # (group_id, topic_id) -> topic name
-        self.global_message_ids: GlobalMsgIDsType = {}  # group_id -> message_id
+        self.global_message_ids: GlobalMsgIDsType = {}   # group_id -> message_id
         self.last_phone: LastPhoneType = {}      # (group_id, topic_id) -> phone
         self.group_titles: GroupTitlesType = {}    # group_id -> group title
+
+    def save_to_csv(self, filename: str = 'stats.csv'):
+        if not self.stats:
+            logger.info("Нет данных для сохранения в CSV.")
+            return
+        data = []
+        for (group_id, topic_id, phone), record in self.stats.items():
+            started_str = record.get("started").strftime("%Y-%m-%dT%H:%M:%S") if record.get("started") else None
+            stopped_str = record.get("stopped").strftime("%Y-%m-%dT%H:%M:%S") if record.get("stopped") else None
+            downtime = record.get("downtime").total_seconds() if record.get("downtime") else None
+            data.append({
+                "group_id": group_id,
+                "topic_id": topic_id,
+                "phone": phone,
+                "started": started_str,
+                "stopped": stopped_str,
+                "downtime": downtime,
+                "topic_name": self.topic_names.get((group_id, topic_id)),
+                "global_message_id": self.global_message_ids.get(group_id),
+                "last_phone": self.last_phone.get((group_id, topic_id)),
+                "group_title": self.group_titles.get(group_id)
+            })
+        try:
+            df = pd.DataFrame(data)
+            df.to_csv(filename, index=False)
+            logger.info(f"Данные успешно сохранены в {filename}")
+        except Exception as e:
+            logger.error(f"Ошибка при сохранении данных в CSV: {e}")
+
+    def load_from_csv(self, filename: str = 'stats.csv'):
+        if not Path(filename).exists():
+            logger.info(f"Файл {filename} не найден. Начинаем с пустой статистикой.")
+            return
+        try:
+            df = pd.read_csv(filename)
+            for _, row in df.iterrows():
+                key = (row['group_id'], row['topic_id'], row['phone'])
+                self.stats[key] = {
+                    "started": pd.to_datetime(row['started']) if pd.notna(row['started']) else None,
+                    "stopped": pd.to_datetime(row['stopped']) if pd.notna(row['stopped']) else None,
+                    "downtime": timedelta(seconds=row['downtime']) if pd.notna(row['downtime']) else None
+                }
+                self.topic_names[(row['group_id'], row['topic_id'])] = row['topic_name']
+                self.global_message_ids[row['group_id']] = row['global_message_id']
+                self.last_phone[(row['group_id'], row['topic_id'])] = row['last_phone']
+                self.group_titles[row['group_id']] = row['group_title']
+            logger.info(f"Данные успешно загружены из {filename}")
+        except Exception as e:
+            logger.error(f"Ошибка при загрузке данных из CSV: {e}")
+
 
 state = BotState()

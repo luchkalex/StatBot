@@ -1,3 +1,4 @@
+# main.py
 import asyncio
 import nest_asyncio
 import logging
@@ -6,6 +7,7 @@ from handlers import start_tracking, stop_tracking, button_handler, message_hand
 from config import TELEGRAM_BOT_TOKEN
 
 nest_asyncio.apply()
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 async def main() -> None:
