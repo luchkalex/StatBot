@@ -3,7 +3,7 @@ import re
 import json
 import logging
 from google import genai
-from config import GEMINI_API_KEY, GEMINI_MODEL
+from config import GEMINI_API_KEY, GEMINI_MODEL, GEMINI_API_KEY_SECONDARY
 
 logger = logging.getLogger(__name__)
 
@@ -22,34 +22,47 @@ def extract_event_info(text: str, default_topic_id: int) -> dict:
     )
     full_prompt = prompt + "\nТекст: " + text
 
-    try:
-        client = genai.Client(api_key=GEMINI_API_KEY)
-        response = client.models.generate_content(model=GEMINI_MODEL, contents=full_prompt)
-        output_text = response.text.strip()
-        json_match = re.search(r'\{.*\}', output_text, re.DOTALL)
-        if json_match:
-            output_text = json_match.group(0)
-        output_text = output_text.replace('```json', '').replace('```', '').strip()
-        logger.info(f"Очищенный ответ Gemini: {output_text}")
-        extracted = json.loads(output_text)
-        if extracted.get("phone"):
-            extracted["phone"] = re.sub(r'[^\d+]', '', extracted["phone"]).lstrip('+')
-        topic_id_match = re.search(r'id:\s*(\d+)', text)
-        extracted["topic_id"] = extracted.get("topic_id") or (int(topic_id_match.group(1)) if topic_id_match else default_topic_id)
-        # Гарантируем, что значения started и stopped – булевы
-        extracted["started"] = bool(extracted.get("started"))
-        extracted["stopped"] = bool(extracted.get("stopped"))
-        return extracted
-    except Exception as e:
-        logger.error(f"Ошибка при извлечении данных через Gemini API: {e}")
-        return {
-            "phone": None,
-            "started": False,
-            "stopped": False,
-            "started_time": None,
-            "stopped_time": None,
-            "topic_id": default_topic_id
-        }
+    # Список ключей для попытки использования
+    gemini_keys = [GEMINI_API_KEY, GEMINI_API_KEY_SECONDARY]
+    for key in gemini_keys:
+        try:
+            client = genai.Client(api_key=key)
+            response = client.models.generate_content(model=GEMINI_MODEL, contents=full_prompt)
+            output_text = response.text.strip()
+            json_match = re.search(r'\{.*\}', output_text, re.DOTALL)
+            if json_match:
+                output_text = json_match.group(0)
+            output_text = output_text.replace('```json', '').replace('```', '').strip()
+            logger.info(f"Очищенный ответ Gemini: {output_text}")
+            extracted = json.loads(output_text)
+            if extracted.get("phone"):
+                extracted["phone"] = re.sub(r'[^\d+]', '', extracted["phone"]).lstrip('+')
+            topic_id_match = re.search(r'id:\s*(\d+)', text)
+            extracted["topic_id"] = extracted.get("topic_id") or (int(topic_id_match.group(1)) if topic_id_match else default_topic_id)
+            # Гарантируем, что значения started и stopped – булевы
+            extracted["started"] = bool(extracted.get("started"))
+            extracted["stopped"] = bool(extracted.get("stopped"))
+            return extracted
+        except Exception as e:
+            err_msg = str(e).lower()
+            logger.error(f"Ошибка при запросе с ключом {key}: {e}")
+            # Если ошибка связана с исчерпанием лимита, пробуем следующий ключ
+            if any(substr in err_msg for substr in ["limit", "exhausted", "quota"]):
+                logger.info(f"Попытка использовать следующий Gemini API ключ вместо {key}")
+                continue
+            else:
+                break  # Если ошибка не из-за лимита – не пытаемся дальше
+
+    # Если ни один ключ не сработал, возвращаем значения по умолчанию
+    return {
+        "phone": None,
+        "started": False,
+        "stopped": False,
+        "started_time": None,
+        "stopped_time": None,
+        "topic_id": default_topic_id
+    }
+
 
 def format_record(record: dict, phone: str) -> str:
     started_str = record.get("started").strftime("%H:%M") if record.get("started") else "-"
