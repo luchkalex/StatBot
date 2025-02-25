@@ -156,34 +156,77 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
             state.topic_names[(group_id, topic_id)] = update.message.forum_topic_created.name
             logger.info(f"Сохранено имя темы: {update.message.forum_topic_created.name} для topic_id {topic_id}")
         logger.info(f"Получено сообщение в группе {group_id} ({chat.title or group_id}): {text}")
+
+        # Если сообщение содержит только номер, запоминаем его для данной темы
         if re.fullmatch(r'\+?\d+', text):
             phone_only = re.sub(r'[^\d]', '', text)
             state.last_phone[(group_id, topic_id)] = phone_only
             logger.info(f"Запомнен номер {phone_only} для темы {topic_id} группы {group_id}.")
             return
+
         extraction = await asyncio.to_thread(extract_event_info, text, topic_id)
-        phone_extracted = extraction.get("phone")
-        event = extraction.get("event")
-        event_time_str = extraction.get("event_time")
-        extracted_topic_id = extraction.get("topic_id")
         logger.info(f"Извлеченные данные: {extraction}")
+
+        phone_extracted = extraction.get("phone")
+        started_flag = extraction.get("started", False)
+        stopped_flag = extraction.get("stopped", False)
+        started_time_str = extraction.get("started_time")
+        stopped_time_str = extraction.get("stopped_time")
+        extracted_topic_id = extraction.get("topic_id")
+
         if phone_extracted:
             state.last_phone[(group_id, extracted_topic_id)] = phone_extracted
-        if not event:
-            logger.info(f"Сообщение не содержит явного события. Номер {phone_extracted} запомнен для темы {extracted_topic_id} группы {group_id}.")
-            return
-        if not event_time_str:
-            event_time_str = message_sent.strftime("%H:%M")
-            logger.info(f"Время не указано, используем время отправки: {event_time_str}")
-        if event == "started" and not phone_extracted:
+
+        # Если номер не указан, пробуем взять последний запомненный номер для темы
+        if not phone_extracted and (started_flag or stopped_flag):
             if (group_id, extracted_topic_id) in state.last_phone:
                 phone_extracted = state.last_phone[(group_id, extracted_topic_id)]
             else:
-                logger.info("Сообщение 'started' не содержит номера и нет сохраненного номера, игнорирую.")
+                logger.info(f"Нет номера для события в теме {extracted_topic_id} группы {group_id}.")
                 return
-        key = (group_id, extracted_topic_id, phone_extracted) if phone_extracted else None
-        if event == "stopped":
-            if not phone_extracted:
+
+        key = (group_id, extracted_topic_id, phone_extracted)
+
+        def parse_time(time_str, default_time):
+            try:
+                reported_time = datetime.strptime(time_str, "%H:%M").time()
+                # Используем replace для получения offset-aware datetime с тем же tzinfo
+                reported_datetime = default_time.replace(hour=reported_time.hour, minute=reported_time.minute, second=0, microsecond=0)
+                return reported_datetime
+            except Exception as e:
+                logger.error(f"Ошибка парсинга времени '{time_str}': {e}")
+                return default_time
+
+        actual_started_time = None
+        actual_stopped_time = None
+
+        if started_flag:
+            if started_time_str:
+                actual_started_time = parse_time(started_time_str, message_sent)
+            else:
+                actual_started_time = message_sent
+
+        if stopped_flag:
+            if stopped_time_str:
+                actual_stopped_time = parse_time(stopped_time_str, message_sent)
+            else:
+                actual_stopped_time = message_sent
+
+        record = state.stats.get(key, {})
+
+        # Обработка события "встал"
+        if started_flag:
+            record["started"] = actual_started_time
+            record["stopped"] = None
+            record["downtime"] = None
+
+        # Обработка события "слетел"
+        if stopped_flag:
+            if record.get("started"):
+                record["stopped"] = actual_stopped_time
+                record["downtime"] = record["stopped"] - record["started"]
+            else:
+                # Если записи с событием "встал" нет, ищем подходящую запись по теме
                 candidate_key = None
                 candidate_record = None
                 for (g, tid, ph), rec in state.stats.items():
@@ -192,34 +235,17 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
                             candidate_key = (g, tid, ph)
                             candidate_record = rec
                 if candidate_record is None:
-                    logger.info("Нет записи 'started' для события 'stopped'")
+                    logger.info("Нет записи 'встал' для события 'слетел'")
                     return
                 key = candidate_key
-                phone_extracted = candidate_key[2]
-        try:
-            reported_time = datetime.strptime(event_time_str, "%H:%M").time()
-        except Exception as e:
-            logger.error(f"Ошибка парсинга времени '{event_time_str}': {e}")
-            return
-        reported_datetime = datetime.combine(message_sent.date(), reported_time)
-        diff_hours = reported_datetime.hour - message_sent.hour
-        actual_event_time = reported_datetime - timedelta(hours=diff_hours) if diff_hours > 0 else reported_datetime
-        record = state.stats.get(key, {})
-        if event == "started":
-            record["started"] = actual_event_time
-            record["stopped"] = None
-            record["downtime"] = None
-        elif event == "stopped":
-            if record.get("started"):
-                record["stopped"] = actual_event_time
+                record = candidate_record
+                record["stopped"] = actual_stopped_time
                 record["downtime"] = record["stopped"] - record["started"]
-            else:
-                logger.info("Нет записи 'started' для события 'stopped'")
-                return
+
         state.stats[key] = record
         group_title = chat.title if chat.title else str(group_id)
         await update_global_message(group_id, group_title, context)
-        state.save_to_csv()  # Сохранение статистики в CSV файл
+        state.save_to_csv()
 
 
 
