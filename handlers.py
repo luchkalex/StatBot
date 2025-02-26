@@ -44,18 +44,24 @@ async def update_global_message(group_id: int, group_title: str, context: Callba
                 avg_seconds = topic_total_seconds / topic_count
                 avg_hours = int(avg_seconds // 3600)
                 avg_minutes = int((avg_seconds % 3600) // 60)
-                lines.append(f"Среднее по теме - {avg_hours}:{avg_minutes:02d}")
-                overall_total_seconds += topic_total_seconds
-                overall_count += topic_count
+                # Вычисляем общее количество минут
+                total_avg_minutes = avg_hours * 60 + avg_minutes
+                # Определяем эмодзи в зависимости от среднего времени
+                marker = ""
+                if total_avg_minutes < 20:
+                    marker = " 🔴"
+                elif total_avg_minutes < 30:
+                    marker = " 🟠"
+                lines.append(f"Среднее по пк - {avg_hours}:{avg_minutes:02d}{marker}")
             else:
-                lines.append("Среднее по теме - 0:00")
+                lines.append("Среднее по пк - 0:00")
         if overall_count:
             overall_avg = overall_total_seconds / overall_count
             overall_hours = int(overall_avg // 3600)
             overall_minutes = int((overall_avg % 3600) // 60)
-            lines.append(f"\nСреднее по группе - {overall_hours}:{overall_minutes:02d}")
-        else:
-            lines.append("\nСреднее по группе - 0:00")
+           # lines.append(f"\nСреднее по группе - {overall_hours}:{overall_minutes:02d}")
+        #else:
+         #   lines.append("\nСреднее по группе - 0:00")
         final_message = "\n".join(lines)
         keyboard = get_daily_stats_keyboard(group_id)
     elif view_mode == "daily":
@@ -213,7 +219,6 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
                 actual_stopped_time = message_sent
 
         record = state.stats.get(key, {})
-
         # Обработка события "встал"
         if started_flag:
             record["started"] = actual_started_time
@@ -278,18 +283,24 @@ async def send_grouped_stats(context: CallbackContext):
                 avg_seconds = topic_total_seconds / topic_count
                 avg_hours = int(avg_seconds // 3600)
                 avg_minutes = int((avg_seconds % 3600) // 60)
-                lines.append(f"Среднее по теме - {avg_hours}:{avg_minutes:02d}")
-                overall_total_seconds += topic_total_seconds
-                overall_count += topic_count
+                # Вычисляем общее количество минут
+                total_avg_minutes = avg_hours * 60 + avg_minutes
+                # Определяем эмодзи в зависимости от среднего времени
+                marker = ""
+                if total_avg_minutes < 20:
+                    marker = " 🔴"
+                elif total_avg_minutes < 30:
+                    marker = " 🟠"
+                lines.append(f"Среднее по пк - {avg_hours}:{avg_minutes:02d}{marker}")
             else:
-                lines.append("Среднее по теме - 0:00")
+                lines.append("Среднее по пк - 0:00")
         if overall_count:
             overall_avg = overall_total_seconds / overall_count
             overall_hours = int(overall_avg // 3600)
             overall_minutes = int((overall_avg % 3600) // 60)
-            lines.append(f"\nСреднее по группе - {overall_hours}:{overall_minutes:02d}")
-        else:
-            lines.append("\nСреднее по группе - 0:00")
+            #lines.append(f"\nСреднее по группе - {overall_hours}:{overall_minutes:02d}")
+        #else:
+         #   lines.append("\nСреднее по группе - 0:00")
         final_message = "\n".join(lines)
         keyboard = get_daily_stats_keyboard(g_id)  # Измените на get_group_stats_keyboard(g_id)
         try:
