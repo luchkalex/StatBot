@@ -14,15 +14,19 @@ GlobalMsgIDsType = Dict[int, int]
 LastPhoneType = Dict[Tuple[int, int], str]
 GroupTitlesType = Dict[int, str]
 
+from datetime import datetime
+import pytz
+
+
 class BotState:
     def __init__(self):
         self.tracking_active: bool = False
         self.admin_chat_id: int = None
-        self.stats: StatsType = {}              # (group_id, topic_id, phone) -> {"started": datetime, "stopped": datetime, "downtime": timedelta}
-        self.topic_names: TopicNamesType = {}    # (group_id, topic_id) -> topic name
-        self.global_message_ids: GlobalMsgIDsType = {}   # group_id -> message_id
-        self.last_phone: LastPhoneType = {}      # (group_id, topic_id) -> phone
-        self.group_titles: GroupTitlesType = {}    # group_id -> group title
+        self.stats: StatsType = {}  # (group_id, topic_id, phone) -> {"started": datetime, "stopped": datetime, "downtime": timedelta}
+        self.topic_names: TopicNamesType = {}  # (group_id, topic_id) -> topic name
+        self.global_message_ids: GlobalMsgIDsType = {}  # group_id -> message_id
+        self.last_phone: LastPhoneType = {}  # (group_id, topic_id) -> phone
+        self.group_titles: GroupTitlesType = {}  # group_id -> group title
 
     def save_to_csv(self, filename: str = 'stats.csv'):
         if not self.stats:
@@ -56,19 +60,29 @@ class BotState:
         if not Path(filename).exists():
             logger.info(f"Файл {filename} не найден. Начинаем с пустой статистикой.")
             return
+
         try:
             df = pd.read_csv(filename)
+            # Получаем текущую дату по местному времени
+            local_now = datetime.now(pytz.timezone("Europe/Kiev")).date()
+
             for _, row in df.iterrows():
-                key = (row['group_id'], row['topic_id'], row['phone'])
-                self.stats[key] = {
-                    "started": pd.to_datetime(row['started']) if pd.notna(row['started']) else None,
-                    "stopped": pd.to_datetime(row['stopped']) if pd.notna(row['stopped']) else None,
-                    "downtime": timedelta(seconds=row['downtime']) if pd.notna(row['downtime']) else None
-                }
-                self.topic_names[(row['group_id'], row['topic_id'])] = row['topic_name']
-                self.global_message_ids[row['group_id']] = row['global_message_id']
-                self.last_phone[(row['group_id'], row['topic_id'])] = row['last_phone']
-                self.group_titles[row['group_id']] = row['group_title']
+                # Считываем дату события
+                started_date = pd.to_datetime(row['started']).date() if pd.notna(row['started']) else None
+                stopped_date = pd.to_datetime(row['stopped']).date() if pd.notna(row['stopped']) else None
+
+                # Загружаем только данные за текущий день
+                if started_date == local_now or stopped_date == local_now:
+                    key = (row['group_id'], row['topic_id'], row['phone'])
+                    self.stats[key] = {
+                        "started": pd.to_datetime(row['started']) if pd.notna(row['started']) else None,
+                        "stopped": pd.to_datetime(row['stopped']) if pd.notna(row['stopped']) else None,
+                        "downtime": timedelta(seconds=row['downtime']) if pd.notna(row['downtime']) else None
+                    }
+                    self.topic_names[(row['group_id'], row['topic_id'])] = row['topic_name']
+                    self.global_message_ids[row['group_id']] = row['global_message_id']
+                    self.last_phone[(row['group_id'], row['topic_id'])] = row['last_phone']
+                    self.group_titles[row['group_id']] = row['group_title']
             logger.info(f"Данные успешно загружены из {filename}")
         except Exception as e:
             logger.error(f"Ошибка при загрузке данных из CSV: {e}")
