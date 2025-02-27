@@ -40,17 +40,21 @@ async def update_global_message(group_id: int, group_title: str, context: Callba
                 if rec.get("started") and not rec.get("stopped"):  # Если есть время начала, но нет времени окончания
                     standing_now += 1
 
+        from datetime import datetime  # если не импортировано
+
+
         for tid in sorted(topics.keys()):
             lines.append(f"\nTopic id: {tid}")
             topic_lines = []
             topic_total_seconds = 0
             topic_count = 0
-            for phone, rec in topics[tid]:
+            default_time = datetime.min.replace(tzinfo=pytz.timezone("Europe/Kiev"))
+            sorted_entries = sorted(topics[tid], key=lambda item: item[1].get("started") or default_time)
+            for phone, rec in sorted_entries:
                 topic_lines.append(format_record(rec, phone))
                 if rec.get("downtime"):
                     topic_total_seconds += rec["downtime"].total_seconds()
                     topic_count += 1
-            topic_lines.sort()
             lines.extend(topic_lines)
             if topic_count:
                 avg_seconds = topic_total_seconds / topic_count
@@ -80,15 +84,23 @@ async def update_global_message(group_id: int, group_title: str, context: Callba
         unique_phones_today = set()  # Для подсчета уникальных номеров за день
         standing_now = 0  # Для подсчета номеров, которые стоят сейчас (не завершены)
 
-        for (g_id, _, phone), rec in state.stats.items():
-            if g_id == group_id:
-                lines.append(format_record(rec, phone))
-                if rec.get("downtime"):
-                    total_seconds += rec["downtime"].total_seconds()
-                    count += 1
-                unique_phones_today.add(phone)  # Добавляем телефон в множество уникальных номеров
-                if rec.get("started") and not rec.get("stopped"):  # Если есть время начала, но нет времени окончания
-                    standing_now += 1
+        # Собираем все записи для группы
+        daily_records = [
+            (phone, rec)
+            for (g_id, _, phone), rec in state.stats.items()
+            if g_id == group_id
+        ]
+
+        # Сортируем по времени 'started'
+        daily_sorted = sorted(daily_records, key=lambda item: item[1].get("started") or default_time)
+        for phone, rec in daily_sorted:
+            lines.append(format_record(rec, phone))
+            if rec.get("downtime"):
+                total_seconds += rec["downtime"].total_seconds()
+                count += 1
+            unique_phones_today.add(phone)
+            if rec.get("started") and not rec.get("stopped"):
+                standing_now += 1
 
         if count:
             avg_seconds = total_seconds / count
