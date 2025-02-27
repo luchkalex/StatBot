@@ -51,7 +51,9 @@ async def update_global_message(group_id: int, group_title: str, context: Callba
                     standing_now += 1
 
         for tid in sorted(topics.keys()):
-            lines.append(f"\nTopic id: {tid}")
+            topic_link = get_topic_link(group_id, tid)
+            # Формируем строку с гиперссылкой на тему
+            lines.append(f"\n<a href='{topic_link}'>Тема: {tid}</a>")
             topic_lines = []
             topic_total_seconds = 0
             topic_count = 0
@@ -133,14 +135,16 @@ async def update_global_message(group_id: int, group_title: str, context: Callba
                 chat_id=state.admin_chat_id,
                 message_id=state.global_message_ids[group_id],
                 text=final_message,
-                reply_markup=keyboard
+                reply_markup=keyboard,
+                parse_mode='HTML'
             )
             logger.info(f"Обновлено сообщение для группы {group_id}")
         else:
             sent_msg = await context.bot.send_message(
                 chat_id=state.admin_chat_id,
                 text=final_message,
-                reply_markup=keyboard
+                reply_markup=keyboard,
+                parse_mode='HTML'
             )
             state.global_message_ids[group_id] = sent_msg.message_id
             logger.info(f"Создано сообщение для группы {group_id} с id {sent_msg.message_id}")
@@ -280,7 +284,9 @@ async def send_grouped_stats(context: CallbackContext):
         overall_total_seconds = 0
         overall_count = 0
         for tid in sorted(topics.keys()):
-            lines.append(f"\nTopic id: {tid}")
+            topic_link = get_topic_link(group_id, tid)
+            # Формируем строку с гиперссылкой на тему
+            lines.append(f"\n<a href='{topic_link}'>Тема: {tid}</a>")
             topic_lines = []
             topic_total_seconds = 0
             topic_count = 0
@@ -319,7 +325,8 @@ async def send_grouped_stats(context: CallbackContext):
             sent_msg = await context.bot.send_message(
                 chat_id=state.admin_chat_id,
                 text=final_message,
-                reply_markup=keyboard
+                reply_markup=keyboard,
+                parse_mode='HTML'
             )
             state.global_message_ids[g_id] = sent_msg.message_id
             logger.info(f"Создано сообщение для группы {g_id} с id {sent_msg.message_id}")
@@ -388,6 +395,15 @@ def convert_to_datetime(value):
         return value
     return None
 
+
+def get_topic_link(group_id: int, topic_id: int) -> str:
+    group_str = str(group_id)
+    # Если id начинается с "-100", удаляем этот префикс
+    if group_str.startswith("-100"):
+        chat_identifier = group_str[4:]
+    else:
+        chat_identifier = group_str
+    return f"https://t.me/c/{chat_identifier}/{topic_id}"
 
 
 async def stop_tracking(update: Update, context: CallbackContext):
