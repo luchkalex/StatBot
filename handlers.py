@@ -187,6 +187,13 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
                                                                                                        False):
         logger.info(f"Сообщение не содержит полезной информации и будет проигнорировано.")
         return
+    # Если извлеченные данные содержат только номер запоминаем его
+    if not extraction.get("phone") is None and not extraction.get("started", False) and not extraction.get(
+            "stopped", False):
+        phone_extracted = extraction.get("phone")
+        state.last_phone[(group_id, topic_id)] = phone_extracted
+        logger.info(f"Запомнен номер {phone_extracted} для темы {topic_id} группы {group_id}.")
+        return
 
     phone_extracted = extraction.get("phone")
     started_flag = extraction.get("started", False)
