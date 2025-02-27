@@ -248,9 +248,13 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
     actual_started_time = None
     actual_stopped_time = None
 
+    record = state.stats.get(key, {})
     if started_flag:
         if started_time_str:
-            actual_started_time = parse_time(started_time_str, message_sent)
+            if not record.get("started"):
+                actual_started_time = parse_time(started_time_str, message_sent)
+            else:
+                actual_started_time = record["started"]
         else:
             actual_started_time = message_sent
 
