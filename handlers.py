@@ -49,11 +49,12 @@ async def update_global_message(group_id: int, group_title: str, context: Callba
                 unique_phones_today.add(phone)
                 if rec.get("started") and not rec.get("stopped"):
                     standing_now += 1
-
+        topic_counter = 0
         for tid in sorted(topics.keys()):
+            topic_counter = topic_counter + 1
             topic_link = get_topic_link(group_id, tid)
             # Формируем строку с гиперссылкой на тему
-            lines.append(f"\n<a href='{topic_link}'>Тема: {tid}</a>")
+            lines.append(f"\n<b><a href='{topic_link}'>                    Тема: {topic_counter}                    </a></b>")
             topic_lines = []
             topic_total_seconds = 0
             topic_count = 0
@@ -283,10 +284,13 @@ async def send_grouped_stats(context: CallbackContext):
         lines = [f"Группа: {group_title}"]
         overall_total_seconds = 0
         overall_count = 0
+        topic_counter = 0
+
         for tid in sorted(topics.keys()):
             topic_link = get_topic_link(group_id, tid)
+            topic_counter = topic_counter + 1
             # Формируем строку с гиперссылкой на тему
-            lines.append(f"\n<a href='{topic_link}'>Тема: {tid}</a>")
+            lines.append(f"\n<b><a href='{topic_link}'>                    Тема: {topic_counter}                    </a></b>")
             topic_lines = []
             topic_total_seconds = 0
             topic_count = 0
