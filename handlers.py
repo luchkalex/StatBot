@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext
-from utils import extract_event_info, format_record
+from utils import extract_event_info
 from state import state
 
 logger = logging.getLogger(__name__)
@@ -19,37 +19,46 @@ def get_main_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 
+# Функция для проверки и преобразования значения в datetime
+def ensure_datetime(value):
+    if isinstance(value, str):
+        try:
+            return datetime.strptime(value, "%H:%M")  # Попробуем преобразовать строку в datetime
+        except ValueError:
+            return None  # Если не удается преобразовать, вернем None
+    elif isinstance(value, datetime):
+        return value  # Если уже datetime, просто возвращаем его
+    return None  # Если значение не строка и не datetime, возвращаем None
+
 async def update_global_message(group_id: int, group_title: str, context: CallbackContext,
                                 view_mode: str = "grouped") -> None:
     if not state.admin_chat_id:
         return
     if view_mode == "grouped":
-        # Существующий код для view_mode "grouped"
         lines = [f"Группа: {group_title}"]
         overall_total_seconds = 0
         overall_count = 0
         topics = {}
 
-        unique_phones_today = set()  # Для подсчета уникальных номеров за день
-        standing_now = 0  # Для подсчета номеров, которые стоят сейчас (не завершены)
+        unique_phones_today = set()
+        standing_now = 0
 
         for (g_id, topic_id, phone), rec in state.stats.items():
             if g_id == group_id:
                 topics.setdefault(topic_id, []).append((phone, rec))
-                unique_phones_today.add(phone)  # Добавляем телефон в множество уникальных номеров
-                if rec.get("started") and not rec.get("stopped"):  # Если есть время начала, но нет времени окончания
+                unique_phones_today.add(phone)
+                if rec.get("started") and not rec.get("stopped"):
                     standing_now += 1
-
-        from datetime import datetime  # если не импортировано
-
 
         for tid in sorted(topics.keys()):
             lines.append(f"\nTopic id: {tid}")
             topic_lines = []
             topic_total_seconds = 0
             topic_count = 0
-            default_time = datetime.min.replace(tzinfo=pytz.timezone("Europe/Kiev"))
-            sorted_entries = sorted(topics[tid], key=lambda item: item[1].get("started") or default_time)
+
+            # Преобразуем все значения в 'started' в datetime перед сортировкой
+            sorted_entries = sorted(topics[tid], key=lambda item: ensure_datetime(item[1].get("started")))
+
             for phone, rec in sorted_entries:
                 topic_lines.append(format_record(rec, phone))
                 if rec.get("downtime"):
@@ -70,7 +79,6 @@ async def update_global_message(group_id: int, group_title: str, context: Callba
             else:
                 lines.append("Среднее по пк - 0:00")
 
-        # Добавляем информацию о количестве поставленных номеров и стоящих номеров
         lines.append(f"\n\nПоставили: {len(unique_phones_today)}")
         lines.append(f"Стоят сейчас: {standing_now}")
 
@@ -81,18 +89,18 @@ async def update_global_message(group_id: int, group_title: str, context: Callba
         lines = [f"Группа: {group_title}"]
         total_seconds = 0
         count = 0
-        unique_phones_today = set()  # Для подсчета уникальных номеров за день
-        standing_now = 0  # Для подсчета номеров, которые стоят сейчас (не завершены)
+        unique_phones_today = set()
+        standing_now = 0
 
-        # Собираем все записи для группы
         daily_records = [
             (phone, rec)
             for (g_id, _, phone), rec in state.stats.items()
             if g_id == group_id
         ]
 
-        # Сортируем по времени 'started'
-        daily_sorted = sorted(daily_records, key=lambda item: item[1].get("started") or default_time)
+        # Сортируем по времени 'started', преобразуя значения в datetime
+        daily_sorted = sorted(daily_records, key=lambda item: ensure_datetime(item[1].get("started")))
+
         for phone, rec in daily_sorted:
             lines.append(format_record(rec, phone))
             if rec.get("downtime"):
@@ -110,8 +118,6 @@ async def update_global_message(group_id: int, group_title: str, context: Callba
             avg_hours, avg_minutes = 0, 0
 
         lines.append(f"Среднее по группе: {avg_hours}:{avg_minutes:02d}")
-
-        # Добавляем информацию о количестве поставленных номеров и стоящих номеров
         lines.append(f"\nПоставили: {len(unique_phones_today)}")
         lines.append(f"Стоят сейчас: {standing_now}")
 
@@ -140,6 +146,7 @@ async def update_global_message(group_id: int, group_title: str, context: Callba
             logger.info(f"Создано сообщение для группы {group_id} с id {sent_msg.message_id}")
     except Exception as e:
         logger.error(f"Ошибка при отправке/редактировании сообщения для группы {group_id}: {e}")
+
 
 
 async def message_handler(update: Update, context: CallbackContext) -> None:
@@ -179,7 +186,7 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
         logger.info(f"Запомнен номер {phone_candidate} для темы {topic_id} группы {group_id}.")
         return
 
-    extraction = await asyncio.to_thread(extract_event_info, text, topic_id)
+    extraction = await asyncio.to_thread(extract_event_info, text, topic_id, message_sent)
     logger.info(f"Извлеченные данные: {extraction}")
 
     # Если извлеченные данные не содержат полезной информации, игнорируем сообщение
@@ -215,67 +222,28 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
 
     key = (group_id, extracted_topic_id, phone_extracted)
 
-    def parse_time(time_str, default_time):
-        try:
-            # Парсим время события (например, "12:00")
-            reported_time = datetime.strptime(time_str, "%H:%M").time()
-
-            # Создаём datetime объект на основе времени события с учётом местного времени
-            reported_datetime = default_time.replace(hour=reported_time.hour, minute=reported_time.minute, second=0,
-                                                     microsecond=0)
-
-            # Получаем разницу между временем события и текущим местным временем
-            time_difference = reported_datetime - default_time
-            logger.info(f"Разница во времени {time_difference}")
-            time_difference_minutes = abs(time_difference.total_seconds() // 60)  # разница в минутах
-
-            # Округляем разницу в часы
-            if time_difference_minutes > 50:
-                logger.info(f"Разница в минутах {time_difference_minutes}")
-                logger.info(f"Разница в секундах {time_difference.total_seconds()}")
-
-                # Если разница больше 50 минут, округляем до ближайшего часа
-                hours_difference = round(time_difference.total_seconds() / 3600)
-                logger.info(f"Округление в часах:  {hours_difference}")
-                # Корректируем время события, вычитая или добавляя нужное количество часов
-                reported_datetime -= timedelta(hours=hours_difference)
-
-            return reported_datetime
-        except Exception as e:
-            logger.error(f"Ошибка парсинга времени '{time_str}': {e}")
-            return default_time
-
-    actual_started_time = None
-    actual_stopped_time = None
-
-    record = state.stats.get(key, {})
-    if started_flag:
-        if started_time_str:
-            if not record.get("started"):
-                actual_started_time = parse_time(started_time_str, message_sent)
-            else:
-                actual_started_time = record["started"]
-        else:
-            actual_started_time = message_sent
-
-    if stopped_flag:
-        if stopped_time_str:
-            actual_stopped_time = parse_time(stopped_time_str, message_sent)
-        else:
-            actual_stopped_time = message_sent
 
     record = state.stats.get(key, {})
     # Обработка события "встал"
     if started_flag:
-        record["started"] = actual_started_time
+        record["started"] = started_time_str
         record["stopped"] = None
         record["downtime"] = None
 
     # Обработка события "слетел"
     if stopped_flag:
         if record.get("started"):
-            record["stopped"] = actual_stopped_time
-            record["downtime"] = record["stopped"] - record["started"]
+            record["stopped"] = stopped_time_str
+            # Преобразуем 'started' и 'stopped' в datetime перед вычитанием
+            started_time = convert_to_datetime(record.get("started"))
+            stopped_time = convert_to_datetime(record.get("stopped"))
+
+            # Если обе переменные стали datetime, вычисляем downtime
+            if started_time and stopped_time:
+                record["downtime"] = stopped_time - started_time
+            else:
+                record["downtime"] = None  # Если одно из значений не удалось преобразовать в datetime
+
         else:
             # Если записи с событием "встал" нет, ищем подходящую запись по теме
             candidate_key = None
@@ -290,7 +258,7 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
                 return
             key = candidate_key
             record = candidate_record
-            record["stopped"] = actual_stopped_time
+            record["stopped"] = stopped_time_str
             record["downtime"] = record["stopped"] - record["started"]
 
     state.stats[key] = record
@@ -406,6 +374,22 @@ async def start_tracking(update: Update, context: CallbackContext):
     )
 
 
+from datetime import datetime
+
+def convert_to_datetime(value):
+    if isinstance(value, str):
+        try:
+            time_part = datetime.strptime(value, "%H:%M").time()
+            now = datetime.now(pytz.timezone("Europe/Kiev"))   # или используйте нужный часовой пояс, например: datetime.now(pytz.timezone("Europe/Kiev"))
+            return datetime.combine(now.date(), time_part)
+        except ValueError:
+            return None
+    elif isinstance(value, datetime):
+        return value
+    return None
+
+
+
 async def stop_tracking(update: Update, context: CallbackContext):
     state.tracking_active = False
     query = update.callback_query
@@ -468,3 +452,24 @@ def get_start_keyboard():
         [InlineKeyboardButton("Старт", callback_data="start_tracking")]
     ]
     return InlineKeyboardMarkup(keyboard)
+
+def format_record(record: dict, phone: str) -> str:
+    started = record.get("started")
+    stopped = record.get("stopped")
+
+    # Преобразуем время, если это строка
+    started = convert_to_datetime(started) if isinstance(started, str) else started
+    stopped = convert_to_datetime(stopped) if isinstance(stopped, str) else stopped
+
+    started_str = started.strftime("%H:%M") if started else "-"
+    stopped_str = stopped.strftime("%H:%M") if stopped else "-"
+
+    downtime = record.get("downtime")
+    if downtime:
+        total_minutes = int(downtime.total_seconds() // 60)
+        hours, minutes = divmod(total_minutes, 60)
+        downtime_str = f"{hours}:{minutes:02d}"
+    else:
+        downtime_str = "-"
+
+    return f"{phone} | {started_str} | {stopped_str} | {downtime_str}"

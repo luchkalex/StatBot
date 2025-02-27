@@ -18,6 +18,21 @@ from datetime import datetime
 import pytz
 
 
+from datetime import datetime
+
+def convert_to_datetime(value):
+    if isinstance(value, str):
+        try:
+            time_part = datetime.strptime(value, "%H:%M").time()
+            now = datetime.now(pytz.timezone("Europe/Kiev"))  # или используйте нужный часовой пояс, например: datetime.now(pytz.timezone("Europe/Kiev"))
+            return datetime.combine(now.date(), time_part)
+        except ValueError:
+            return None
+    elif isinstance(value, datetime):
+        return value
+    return None
+
+
 class BotState:
     def __init__(self):
         self.tracking_active: bool = False
@@ -28,15 +43,24 @@ class BotState:
         self.last_phone: LastPhoneType = {}  # (group_id, topic_id) -> phone
         self.group_titles: GroupTitlesType = {}  # group_id -> group title
 
+    from datetime import datetime
+
+
+
     def save_to_csv(self, filename: str = 'stats.csv'):
         if not self.stats:
             logger.info("Нет данных для сохранения в CSV.")
             return
         data = []
         for (group_id, topic_id, phone), record in self.stats.items():
-            started_str = record.get("started").strftime("%Y-%m-%dT%H:%M:%S") if record.get("started") else None
-            stopped_str = record.get("stopped").strftime("%Y-%m-%dT%H:%M:%S") if record.get("stopped") else None
+            # Преобразуем 'started' и 'stopped' в datetime перед использованием strftime()
+            started = convert_to_datetime(record.get("started"))
+            stopped = convert_to_datetime(record.get("stopped"))
+
+            started_str = started.strftime("%Y-%m-%dT%H:%M:%S") if started else None
+            stopped_str = stopped.strftime("%Y-%m-%dT%H:%M:%S") if stopped else None
             downtime = record.get("downtime").total_seconds() if record.get("downtime") else None
+
             data.append({
                 "group_id": group_id,
                 "topic_id": topic_id,
@@ -49,6 +73,7 @@ class BotState:
                 "last_phone": self.last_phone.get((group_id, topic_id)),
                 "group_title": self.group_titles.get(group_id)
             })
+
         try:
             df = pd.DataFrame(data)
             df.to_csv(filename, index=False)
