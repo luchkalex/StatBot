@@ -1,6 +1,8 @@
 import logging
 from telegram import Update
 from telegram.ext import ConversationHandler, CommandHandler, MessageHandler, filters, CallbackContext
+
+from config import ACCESS_KEYS
 from keyboards import get_stop_keyboard
 from stats_helpers import send_grouped_stats
 from state import state
@@ -11,10 +13,6 @@ logger = logging.getLogger(__name__)
 ACCESS_KEY_STATE = 1
 
 # Словарь допустимых ключей доступа и соответствующих CSV-файлов
-ACCESS_KEYS = {
-    "key1": "stats_account1.csv",
-    "key2": "stats_account2.csv"
-}
 
 async def start_auth(update: Update, context: CallbackContext) -> int:
     user_id = update.effective_user.id

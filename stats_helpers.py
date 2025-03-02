@@ -47,14 +47,19 @@ def format_record(record: dict, phone: str) -> str:
     logger.debug("Отформатированная запись: %s", formatted)
     return formatted
 
-async def update_global_message(group_id: int, group_title: str, context: CallbackContext, view_mode: str = "grouped") -> None:
-    csv_filename = context.user_data.get('csv_filename', 'stats.csv')
+async def update_global_message(
+    group_id: int,
+    group_title: str,
+    context: CallbackContext,
+    view_mode: str = "grouped",
+    csv_filename: str = None
+) -> None:
+    if csv_filename is None:
+        csv_filename = context.user_data.get('csv_filename', 'stats.csv')
     admin_chat_ids = state.admin_chat_ids.get(csv_filename, set())
     if not admin_chat_ids:
         logger.warning("Не найдено chat_id для CSV файла %s", csv_filename)
         return
-
-    logger.info("Обновление сообщения для группы '%s' для всех чатов (CSV '%s'): %s", group_title, csv_filename, admin_chat_ids)
 
     if view_mode == "grouped":
         lines = [f"Группа: {group_title}"]
@@ -153,6 +158,18 @@ async def update_global_message(group_id: int, group_title: str, context: Callba
                 logger.info("Создано сообщение в чате %s для группы '%s' с id %s", admin_chat_id, group_title, sent_msg.message_id)
         except Exception as e:
             logger.error("Ошибка при обновлении/отправке сообщения в чате %s для группы %s: %s", admin_chat_id, group_id, e)
+
+# Новая функция для обновления статистики для всех активных ключей (CSV-файлов)
+async def update_all_stats(context: CallbackContext, view_mode: str = "grouped") -> None:
+    # Для каждого активного CSV-файла (ключа) обновляем сообщения для всех групп,
+    # найденных в общей статистике.
+    for csv_filename in state.admin_chat_ids.keys():
+        group_ids = {group_id for (group_id, _, _) in state.stats.keys()}
+        for group_id in group_ids:
+            group_title = state.group_titles.get(group_id, str(group_id))
+            await update_global_message(group_id, group_title, context, view_mode=view_mode, csv_filename=csv_filename)
+        # Сохраняем данные в соответствующий CSV‑файл
+        state.save_to_csv(csv_filename)
 
 async def send_grouped_stats(context: CallbackContext) -> None:
     logger.info("Отправка сгруппированной статистики")
@@ -401,6 +418,6 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
 
     state.stats[key] = record
     group_title = chat.title if chat.title else str(group_id)
-    await update_global_message(group_id, group_title, context)
+    await update_all_stats(context)
     logger.info(f"Запрос на сохранение в CSV {context.user_data.get('csv_filename', 'stats.csv')}")
     state.save_to_csv(context.user_data.get('csv_filename', 'stats.csv'))
