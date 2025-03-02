@@ -4,14 +4,14 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="c5c855c2-7671-431f-90b7-216cafbd138d" name="Changes" comment="Processing &quot;2387587485458 бери&quot; case">
-      <change beforePath="$PROJECT_DIR$/.env" beforeDir="false" afterPath="$PROJECT_DIR$/.env" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/StatBot.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/StatBot.iml" afterDir="false" />
+    <list default="true" id="c5c855c2-7671-431f-90b7-216cafbd138d" name="Changes" comment="Login by key added">
+      <change afterPath="$PROJECT_DIR$/auth.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/keyboards.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/stats_helpers.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/utils_helpers.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/handlers.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/handlers.py" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/state.py" beforeDir="false" afterPath="$PROJECT_DIR$/state.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -203,7 +203,15 @@
       <option name="project" value="LOCAL" />
       <updated>1740657067457</updated>
     </task>
-    <option name="localTasksCounter" value="13" />
+    <task id="LOCAL-00013" summary="Login by key added">
+      <option name="closed" value="true" />
+      <created>1740909688812</created>
+      <option name="number" value="00013" />
+      <option name="presentableId" value="LOCAL-00013" />
+      <option name="project" value="LOCAL" />
+      <updated>1740909688812</updated>
+    </task>
+    <option name="localTasksCounter" value="14" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -229,6 +237,7 @@
     <MESSAGE value="- Button title edit&#10;- 1200 processing add&#10;- Today info&#10;- No sense message processing&#10;- Count up and set&#10;- Question processing vstal?&#10;- Typo processing&#10;- Phone any format processing&#10;- Time zone processing&#10;- Editing message processing" />
     <MESSAGE value="Processing format&#10;+2103&#10;-2109" />
     <MESSAGE value="Processing &quot;2387587485458 бери&quot; case" />
-    <option name="LAST_COMMIT_MESSAGE" value="Processing &quot;2387587485458 бери&quot; case" />
+    <MESSAGE value="Login by key added" />
+    <option name="LAST_COMMIT_MESSAGE" value="Login by key added" />
   </component>
 </project>

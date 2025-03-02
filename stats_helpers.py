@@ -1,94 +1,58 @@
-# handlers.py
-import re
 import asyncio
-import pytz
 import logging
-from datetime import datetime, timedelta
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+import re
+
+import pytz
+from datetime import datetime
+
+from telegram import Update
 from telegram.ext import CallbackContext
-from utils import extract_event_info
+from keyboards import get_daily_stats_keyboard, get_group_stats_keyboard, get_stop_keyboard, get_start_keyboard
 from state import state
-from telegram.ext import ConversationHandler, CommandHandler, MessageHandler, filters
+from utils import extract_event_info
+from utils_helpers import ensure_datetime, convert_to_datetime
 
 logger = logging.getLogger(__name__)
 
-
-def get_main_keyboard():
-    keyboard = [
-        [InlineKeyboardButton("Стоп", callback_data="stop_tracking")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-# Определяем состояние разговора
-ACCESS_KEY_STATE = 1
-
-# Словарь ключей доступа и соответствующих CSV-файлов.
-ACCESS_KEYS = {
-    "key1": "stats_account1.csv",
-    "key2": "stats_account2.csv"
-}
-
-async def start_auth(update: Update, context: CallbackContext):
-    """Обработчик команды /start. Запрашивает у пользователя ключ доступа."""
-    await update.message.reply_text("Введите ключ доступа:")
-    return ACCESS_KEY_STATE
-
-async def process_access_key(update: Update, context: CallbackContext):
-    """Обрабатывает введённый ключ доступа и запускает отслеживание статистики."""
-    access_key = update.message.text.strip()
-    if access_key in ACCESS_KEYS:
-        csv_filename = ACCESS_KEYS[access_key]
-        context.user_data['csv_filename'] = csv_filename
-
-        # Запускаем отслеживание статистики
-        state.tracking_active = True
-        state.admin_chat_id = update.message.chat_id
-        state.stats.clear()
-        state.global_message_ids.clear()
-        state.load_from_csv(csv_filename)
-
-        # Отправляем сгруппированную статистику (если есть) и сообщение о запуске
-        await send_grouped_stats(context)
-        await update.message.reply_text(
-            f"Авторизация успешна\nСтатистика запущена.",
-            reply_markup=get_stop_keyboard()
-        )
-        return ConversationHandler.END
+def get_topic_link(group_id: int, topic_id: int) -> str:
+    logger.debug("Генерация ссылки для группы %s, тема %s", group_id, topic_id)
+    group_str = str(group_id)
+    if group_str.startswith("-100"):
+        chat_identifier = group_str[4:]
     else:
-        await update.message.reply_text("Неверный ключ доступа. Попробуйте ещё раз:")
-        return ACCESS_KEY_STATE
+        chat_identifier = group_str
+    link = f"https://t.me/c/{chat_identifier}/{topic_id}"
+    logger.debug("Сгенерирована ссылка: %s", link)
+    return link
 
+def format_record(record: dict, phone: str) -> str:
+    logger.debug("Форматирование записи для номера %s", phone)
+    started = record.get("started")
+    stopped = record.get("stopped")
+    started = convert_to_datetime(started) if isinstance(started, str) else started
+    stopped = convert_to_datetime(stopped) if isinstance(stopped, str) else stopped
+    started_str = started.strftime("%H:%M") if started else "-"
+    stopped_str = stopped.strftime("%H:%M") if stopped else "-"
+    downtime = record.get("downtime")
+    if downtime:
+        total_minutes = int(downtime.total_seconds() // 60)
+        hours, minutes = divmod(total_minutes, 60)
+        downtime_str = f"{hours}:{minutes:02d}"
+    else:
+        downtime_str = "-"
+    formatted = f"{phone} | {started_str} | {stopped_str} | {downtime_str}"
+    logger.debug("Отформатированная запись: %s", formatted)
+    return formatted
 
-# Создаём ConversationHandler для авторизации, передавая ссылки на функции без вызова:
-login_conv_handler = ConversationHandler(
-    entry_points=[CommandHandler('start', start_auth)],
-    states={
-        ACCESS_KEY_STATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_access_key)]
-    },
-    fallbacks=[]
-)
-
-# Функция для проверки и преобразования значения в datetime
-def ensure_datetime(value):
-    if isinstance(value, str):
-        try:
-            return datetime.strptime(value, "%H:%M")  # Попробуем преобразовать строку в datetime
-        except ValueError:
-            return None  # Если не удается преобразовать, вернем None
-    elif isinstance(value, datetime):
-        return value  # Если уже datetime, просто возвращаем его
-    return None  # Если значение не строка и не datetime, возвращаем None
-
-async def update_global_message(group_id: int, group_title: str, context: CallbackContext,
-                                view_mode: str = "grouped") -> None:
+async def update_global_message(group_id: int, group_title: str, context: CallbackContext, view_mode: str = "grouped") -> None:
+    logger.info("Обновление глобального сообщения для группы %s в режиме '%s'", group_title, view_mode)
     if not state.admin_chat_id:
+        logger.warning("admin_chat_id не установлен для обновления сообщения")
         return
+
     if view_mode == "grouped":
         lines = [f"Группа: {group_title}"]
-        overall_total_seconds = 0
-        overall_count = 0
         topics = {}
-
         unique_phones_today = set()
         standing_now = 0
 
@@ -98,19 +62,16 @@ async def update_global_message(group_id: int, group_title: str, context: Callba
                 unique_phones_today.add(phone)
                 if rec.get("started") and not rec.get("stopped"):
                     standing_now += 1
+
         topic_counter = 0
         for tid in sorted(topics.keys()):
-            topic_counter = topic_counter + 1
+            topic_counter += 1
             topic_link = get_topic_link(group_id, tid)
-            # Формируем строку с гиперссылкой на тему
             lines.append(f"\n<b><a href='{topic_link}'>                    Тема: {topic_counter}                    </a></b>")
             topic_lines = []
             topic_total_seconds = 0
             topic_count = 0
-
-            # Преобразуем все значения в 'started' в datetime перед сортировкой
             sorted_entries = sorted(topics[tid], key=lambda item: ensure_datetime(item[1].get("started")))
-
             for phone, rec in sorted_entries:
                 topic_lines.append(format_record(rec, phone))
                 if rec.get("downtime"):
@@ -122,21 +83,14 @@ async def update_global_message(group_id: int, group_title: str, context: Callba
                 avg_hours = int(avg_seconds // 3600)
                 avg_minutes = int((avg_seconds % 3600) // 60)
                 total_avg_minutes = avg_hours * 60 + avg_minutes
-                marker = ""
-                if total_avg_minutes < 20:
-                    marker = " 🔴"
-                elif total_avg_minutes < 30:
-                    marker = " 🟠"
+                marker = " 🔴" if total_avg_minutes < 20 else " 🟠" if total_avg_minutes < 30 else ""
                 lines.append(f"Среднее по пк - {avg_hours}:{avg_minutes:02d}{marker}")
             else:
                 lines.append("Среднее по пк - 0:00")
-
         lines.append(f"\n\nПоставили: {len(unique_phones_today)}")
         lines.append(f"Стоят сейчас: {standing_now}")
-
         final_message = "\n".join(lines)
         keyboard = get_daily_stats_keyboard(group_id)
-
     elif view_mode == "daily":
         lines = [f"Группа: {group_title}"]
         total_seconds = 0
@@ -144,15 +98,8 @@ async def update_global_message(group_id: int, group_title: str, context: Callba
         unique_phones_today = set()
         standing_now = 0
 
-        daily_records = [
-            (phone, rec)
-            for (g_id, _, phone), rec in state.stats.items()
-            if g_id == group_id
-        ]
-
-        # Сортируем по времени 'started', преобразуя значения в datetime
+        daily_records = [(phone, rec) for (g_id, _, phone), rec in state.stats.items() if g_id == group_id]
         daily_sorted = sorted(daily_records, key=lambda item: ensure_datetime(item[1].get("started")))
-
         for phone, rec in daily_sorted:
             lines.append(format_record(rec, phone))
             if rec.get("downtime"):
@@ -161,22 +108,19 @@ async def update_global_message(group_id: int, group_title: str, context: Callba
             unique_phones_today.add(phone)
             if rec.get("started") and not rec.get("stopped"):
                 standing_now += 1
-
         if count:
             avg_seconds = total_seconds / count
             avg_hours = int(avg_seconds // 3600)
             avg_minutes = int((avg_seconds % 3600) // 60)
         else:
             avg_hours, avg_minutes = 0, 0
-
         lines.append(f"Среднее по группе: {avg_hours}:{avg_minutes:02d}")
         lines.append(f"\nПоставили: {len(unique_phones_today)}")
         lines.append(f"Стоят сейчас: {standing_now}")
-
         final_message = "\n".join(lines)
         keyboard = get_group_stats_keyboard(group_id)
-
     else:
+        logger.error("Неверный режим отображения: %s", view_mode)
         return
 
     try:
@@ -188,7 +132,7 @@ async def update_global_message(group_id: int, group_title: str, context: Callba
                 reply_markup=keyboard,
                 parse_mode='HTML'
             )
-            logger.info(f"Обновлено сообщение для группы {group_title}")
+            logger.info("Сообщение для группы '%s' обновлено", group_title)
         else:
             sent_msg = await context.bot.send_message(
                 chat_id=state.admin_chat_id,
@@ -197,11 +141,9 @@ async def update_global_message(group_id: int, group_title: str, context: Callba
                 parse_mode='HTML'
             )
             state.global_message_ids[group_id] = sent_msg.message_id
-            logger.info(f"Создано сообщение для группы {group_id} с id {sent_msg.message_id}")
+            logger.info("Сообщение для группы '%s' создано с id %s", group_title, sent_msg.message_id)
     except Exception as e:
-        logger.error(f"Ошибка при отправке/редактировании сообщения для группы {group_id}: {e}")
-
-
+        logger.error("Ошибка при отправке/редактировании сообщения для группы %s: %s", group_id, e)
 
 async def message_handler(update: Update, context: CallbackContext) -> None:
     if not state.tracking_active:
@@ -323,11 +265,10 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
     logger.info(f"Запрос на сохранение в CSV {context.user_data.get('csv_filename', 'stats.csv')}")
     state.save_to_csv(context.user_data.get('csv_filename', 'stats.csv'))
 
-
-
-async def send_grouped_stats(context: CallbackContext):
-    logger.info(f"Grouped stats")
+async def send_grouped_stats(context: CallbackContext) -> None:
+    logger.info("Отправка сгруппированной статистики")
     if not state.admin_chat_id:
+        logger.warning("admin_chat_id не установлен, статистику отправить невозможно")
         return
     groups = {}
     for (group_id, topic_id, phone), rec in state.stats.items():
@@ -335,14 +276,10 @@ async def send_grouped_stats(context: CallbackContext):
     for g_id, topics in groups.items():
         group_title = state.group_titles.get(g_id, str(g_id))
         lines = [f"Группа: {group_title}"]
-        overall_total_seconds = 0
-        overall_count = 0
         topic_counter = 0
-
         for tid in sorted(topics.keys()):
-            topic_link = get_topic_link(group_id, tid)
-            topic_counter = topic_counter + 1
-            # Формируем строку с гиперссылкой на тему
+            topic_counter += 1
+            topic_link = get_topic_link(g_id, tid)
             lines.append(f"\n<b><a href='{topic_link}'>                    Тема: {topic_counter}                    </a></b>")
             topic_lines = []
             topic_total_seconds = 0
@@ -358,26 +295,13 @@ async def send_grouped_stats(context: CallbackContext):
                 avg_seconds = topic_total_seconds / topic_count
                 avg_hours = int(avg_seconds // 3600)
                 avg_minutes = int((avg_seconds % 3600) // 60)
-                # Вычисляем общее количество минут
                 total_avg_minutes = avg_hours * 60 + avg_minutes
-                # Определяем эмодзи в зависимости от среднего времени
-                marker = ""
-                if total_avg_minutes < 20:
-                    marker = " 🔴"
-                elif total_avg_minutes < 30:
-                    marker = " 🟠"
+                marker = " 🔴" if total_avg_minutes < 20 else " 🟠" if total_avg_minutes < 30 else ""
                 lines.append(f"Среднее по пк - {avg_hours}:{avg_minutes:02d}{marker}")
             else:
                 lines.append("Среднее по пк - 0:00")
-        if overall_count:
-            overall_avg = overall_total_seconds / overall_count
-            overall_hours = int(overall_avg // 3600)
-            overall_minutes = int((overall_avg % 3600) // 60)
-            # lines.append(f"\nСреднее по группе - {overall_hours}:{overall_minutes:02d}")
-        # else:
-        #   lines.append("\nСреднее по группе - 0:00")
         final_message = "\n".join(lines)
-        keyboard = get_daily_stats_keyboard(g_id)  # Измените на get_group_stats_keyboard(g_id)
+        keyboard = get_daily_stats_keyboard(g_id)
         try:
             sent_msg = await context.bot.send_message(
                 chat_id=state.admin_chat_id,
@@ -386,73 +310,35 @@ async def send_grouped_stats(context: CallbackContext):
                 parse_mode='HTML'
             )
             state.global_message_ids[g_id] = sent_msg.message_id
-            logger.info(f"Создано сообщение для группы {g_id} с id {sent_msg.message_id}")
+            logger.info("Сообщение для группы %s создано с id %s", g_id, sent_msg.message_id)
         except Exception as e:
-            logger.error(f"Ошибка при отправке сообщения для группы {g_id}: {e}")
+            logger.error("Ошибка при отправке сообщения для группы %s: %s", g_id, e)
 
-
-async def start_tracking(update: Update, context: CallbackContext):
-    # Проверяем, что пользователь авторизован (т.е. в context.user_data сохранён csv_filename)
-    if 'csv_filename' not in context.user_data:
+async def start_tracking(context: CallbackContext, update=None) -> None:
+    logger.info("Запуск отслеживания статистики")
+    if update:
         if update.message:
-            await update.message.reply_text("Вы не авторизованы. Введите ключ доступа через команду /start.")
-        elif update.callback_query:
-            await update.callback_query.message.reply_text("Вы не авторизованы. Введите ключ доступа через команду /start.")
-        return
-
+            state.admin_chat_id = update.message.chat_id
+        elif update.callback_query and update.callback_query.message:
+            state.admin_chat_id = update.callback_query.message.chat_id
+        else:
+            logger.error("Не удалось получить chat_id при запуске отслеживания")
+            return
     state.tracking_active = True
-
-    # Определяем chat_id
-    if update.message:
-        state.admin_chat_id = update.message.chat_id
-    elif update.callback_query and update.callback_query.message:
-        state.admin_chat_id = update.callback_query.message.chat_id
-    else:
-        logger.error("Ошибка: не удалось получить chat_id.")
-        return
-
     state.stats.clear()
     state.global_message_ids.clear()
-    # Загружаем статистику из CSV для данного аккаунта
-    state.load_from_csv(context.user_data.get('csv_filename', 'stats.csv'))
-
-    # Отправляем все имеющиеся данные в виде группировки по темам
+    csv_filename = context.user_data.get('csv_filename', 'stats.csv')
+    state.load_from_csv(csv_filename)
     await send_grouped_stats(context)
+    if update:
+        if update.message:
+            await update.message.reply_text("Статистика запущена", reply_markup=get_stop_keyboard())
+        elif update.callback_query:
+            await update.callback_query.message.reply_text("Статистика запущена", reply_markup=get_stop_keyboard())
+    logger.info("Отслеживание статистики запущено")
 
-    # Отправляем сообщение, что статистика запущена, с кнопкой "Стоп"
-    if update.message:
-        await update.message.reply_text("Статистика запущена", reply_markup=get_stop_keyboard())
-    elif update.callback_query:
-        await update.callback_query.message.reply_text("Статистика запущена", reply_markup=get_stop_keyboard())
-
-
-
-from datetime import datetime
-
-def convert_to_datetime(value):
-    if isinstance(value, str):
-        try:
-            time_part = datetime.strptime(value, "%H:%M").time()
-            now = datetime.now(pytz.timezone("Europe/Kiev"))   # или используйте нужный часовой пояс, например: datetime.now(pytz.timezone("Europe/Kiev"))
-            return datetime.combine(now.date(), time_part)
-        except ValueError:
-            return None
-    elif isinstance(value, datetime):
-        return value
-    return None
-
-
-def get_topic_link(group_id: int, topic_id: int) -> str:
-    group_str = str(group_id)
-    # Если id начинается с "-100", удаляем этот префикс
-    if group_str.startswith("-100"):
-        chat_identifier = group_str[4:]
-    else:
-        chat_identifier = group_str
-    return f"https://t.me/c/{chat_identifier}/{topic_id}"
-
-
-async def stop_tracking(update: Update, context: CallbackContext):
+async def stop_tracking(update, context: CallbackContext) -> None:
+    logger.info("Остановка отслеживания статистики")
     state.tracking_active = False
     query = update.callback_query
     if query:
@@ -461,77 +347,26 @@ async def stop_tracking(update: Update, context: CallbackContext):
                 text="Статистика остановлена",
                 reply_markup=get_start_keyboard()
             )
-            logger.info("Обновлено глобальное сообщение: Статистика остановлена")
+            logger.info("Сообщение обновлено: Статистика остановлена")
         except Exception as e:
-            logger.error(f"Ошибка при обновлении глобального сообщения: {e}")
+            logger.error("Ошибка при обновлении сообщения при остановке: %s", e)
     else:
         await update.message.reply_text("Статистика остановлена", reply_markup=get_start_keyboard())
 
-
-async def button_handler(update: Update, context: CallbackContext):
+async def button_handler(update, context: CallbackContext) -> None:
+    logger.info("Обработка нажатия кнопки")
     query = update.callback_query
     await query.answer()
-
-    if query.data == "start_tracking":
-        # Обрабатываем нажатие кнопки "Старт"
-        await start_tracking(update, context)  # Запускаем отслеживание
-    elif query.data == "stop_tracking":
-        await stop_tracking(update, context)  # Останавливаем отслеживание
-    elif query.data.startswith("group_stats_"):
-        group_id = int(query.data.split('_')[2])
+    data = query.data
+    if data == "start_tracking":
+        await start_tracking(context, update)
+    elif data == "stop_tracking":
+        await stop_tracking(update, context)
+    elif data.startswith("group_stats_"):
+        group_id = int(data.split('_')[2])
         group_title = state.group_titles.get(group_id, str(group_id))
         await update_global_message(group_id, group_title, context, view_mode="grouped")
-    elif query.data.startswith("daily_stats_"):
-        group_id = int(query.data.split('_')[2])
+    elif data.startswith("daily_stats_"):
+        group_id = int(data.split('_')[2])
         group_title = state.group_titles.get(group_id, str(group_id))
         await update_global_message(group_id, group_title, context, view_mode="daily")
-
-
-def get_stop_keyboard():
-    keyboard = [
-        [InlineKeyboardButton("Стоп", callback_data="stop_tracking")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-
-def get_group_stats_keyboard(group_id):
-    keyboard = [
-        [InlineKeyboardButton("Статистика по пк", callback_data=f"group_stats_{group_id}")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-
-def get_daily_stats_keyboard(group_id):
-    keyboard = [
-        [InlineKeyboardButton("Статистика по группе", callback_data=f"daily_stats_{group_id}")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-
-def get_start_keyboard():
-    logger.info(f"start keyboard")
-    keyboard = [
-        [InlineKeyboardButton("Старт", callback_data="start_tracking")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-def format_record(record: dict, phone: str) -> str:
-    started = record.get("started")
-    stopped = record.get("stopped")
-
-    # Преобразуем время, если это строка
-    started = convert_to_datetime(started) if isinstance(started, str) else started
-    stopped = convert_to_datetime(stopped) if isinstance(stopped, str) else stopped
-
-    started_str = started.strftime("%H:%M") if started else "-"
-    stopped_str = stopped.strftime("%H:%M") if stopped else "-"
-
-    downtime = record.get("downtime")
-    if downtime:
-        total_minutes = int(downtime.total_seconds() // 60)
-        hours, minutes = divmod(total_minutes, 60)
-        downtime_str = f"{hours}:{minutes:02d}"
-    else:
-        downtime_str = "-"
-
-    return f"{phone} | {started_str} | {stopped_str} | {downtime_str}"

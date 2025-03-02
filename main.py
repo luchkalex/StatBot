@@ -5,14 +5,9 @@ import logging
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ConversationHandler
 
 # Импортируем новые обработчики для авторизации вместе с другими функциями
-from handlers import (
-    message_handler,
-    stop_tracking,
-    button_handler,
-    start_auth,
-    process_access_key,
-    login_conv_handler  # ConversationHandler, который мы создавали для авторизации
-)
+
+from auth import login_conv_handler
+from stats_helpers import stop_tracking, button_handler, message_handler
 from config import TELEGRAM_BOT_TOKEN
 
 nest_asyncio.apply()
