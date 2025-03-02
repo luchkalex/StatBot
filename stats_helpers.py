@@ -6,6 +6,9 @@ import pytz
 from datetime import datetime
 
 from telegram import Update
+import logging
+import pytz
+from datetime import datetime
 from telegram.ext import CallbackContext
 from keyboards import get_daily_stats_keyboard, get_group_stats_keyboard, get_stop_keyboard, get_start_keyboard
 from state import state
@@ -45,29 +48,30 @@ def format_record(record: dict, phone: str) -> str:
     return formatted
 
 async def update_global_message(group_id: int, group_title: str, context: CallbackContext, view_mode: str = "grouped") -> None:
-    logger.info("Обновление глобального сообщения для группы %s в режиме '%s'", group_title, view_mode)
-    if not state.admin_chat_id:
-        logger.warning("admin_chat_id не установлен для обновления сообщения")
+    csv_filename = context.user_data.get('csv_filename', 'stats.csv')
+    admin_chat_ids = state.admin_chat_ids.get(csv_filename, set())
+    if not admin_chat_ids:
+        logger.warning("Не найдено chat_id для CSV файла %s", csv_filename)
         return
+
+    logger.info("Обновление сообщения для группы '%s' для всех чатов (CSV '%s'): %s", group_title, csv_filename, admin_chat_ids)
 
     if view_mode == "grouped":
         lines = [f"Группа: {group_title}"]
         topics = {}
         unique_phones_today = set()
         standing_now = 0
-
         for (g_id, topic_id, phone), rec in state.stats.items():
             if g_id == group_id:
                 topics.setdefault(topic_id, []).append((phone, rec))
                 unique_phones_today.add(phone)
                 if rec.get("started") and not rec.get("stopped"):
                     standing_now += 1
-
         topic_counter = 0
         for tid in sorted(topics.keys()):
             topic_counter += 1
             topic_link = get_topic_link(group_id, tid)
-            lines.append(f"\n<b><a href='{topic_link}'>                    Тема: {topic_counter}                    </a></b>")
+            lines.append(f"\n<b><a href='{topic_link}'>Тема: {topic_counter}</a></b>")
             topic_lines = []
             topic_total_seconds = 0
             topic_count = 0
@@ -97,7 +101,6 @@ async def update_global_message(group_id: int, group_title: str, context: Callba
         count = 0
         unique_phones_today = set()
         standing_now = 0
-
         daily_records = [(phone, rec) for (g_id, _, phone), rec in state.stats.items() if g_id == group_id]
         daily_sorted = sorted(daily_records, key=lambda item: ensure_datetime(item[1].get("started")))
         for phone, rec in daily_sorted:
@@ -123,27 +126,164 @@ async def update_global_message(group_id: int, group_title: str, context: Callba
         logger.error("Неверный режим отображения: %s", view_mode)
         return
 
-    try:
-        if group_id in state.global_message_ids:
-            await context.bot.edit_message_text(
-                chat_id=state.admin_chat_id,
-                message_id=state.global_message_ids[group_id],
-                text=final_message,
-                reply_markup=keyboard,
-                parse_mode='HTML'
-            )
-            logger.info("Сообщение для группы '%s' обновлено", group_title)
-        else:
-            sent_msg = await context.bot.send_message(
-                chat_id=state.admin_chat_id,
-                text=final_message,
-                reply_markup=keyboard,
-                parse_mode='HTML'
-            )
-            state.global_message_ids[group_id] = sent_msg.message_id
-            logger.info("Сообщение для группы '%s' создано с id %s", group_title, sent_msg.message_id)
-    except Exception as e:
-        logger.error("Ошибка при отправке/редактировании сообщения для группы %s: %s", group_id, e)
+    if csv_filename not in state.global_message_ids:
+        state.global_message_ids[csv_filename] = {}
+    for admin_chat_id in admin_chat_ids:
+        global_msgs = state.global_message_ids[csv_filename]
+        try:
+            if admin_chat_id in global_msgs and group_id in global_msgs[admin_chat_id]:
+                await context.bot.edit_message_text(
+                    chat_id=admin_chat_id,
+                    message_id=global_msgs[admin_chat_id][group_id],
+                    text=final_message,
+                    reply_markup=keyboard,
+                    parse_mode='HTML'
+                )
+                logger.info("Обновлено сообщение в чате %s для группы '%s'", admin_chat_id, group_title)
+            else:
+                sent_msg = await context.bot.send_message(
+                    chat_id=admin_chat_id,
+                    text=final_message,
+                    reply_markup=keyboard,
+                    parse_mode='HTML'
+                )
+                if admin_chat_id not in global_msgs:
+                    global_msgs[admin_chat_id] = {}
+                global_msgs[admin_chat_id][group_id] = sent_msg.message_id
+                logger.info("Создано сообщение в чате %s для группы '%s' с id %s", admin_chat_id, group_title, sent_msg.message_id)
+        except Exception as e:
+            logger.error("Ошибка при обновлении/отправке сообщения в чате %s для группы %s: %s", admin_chat_id, group_id, e)
+
+async def send_grouped_stats(context: CallbackContext) -> None:
+    logger.info("Отправка сгруппированной статистики")
+    csv_filename = context.user_data.get('csv_filename', 'stats.csv')
+    admin_chat_ids = state.admin_chat_ids.get(csv_filename, set())
+    if not admin_chat_ids:
+        logger.warning("Нет chat_id для CSV файла %s", csv_filename)
+        return
+
+    groups = {}
+    for (group_id, topic_id, phone), rec in state.stats.items():
+        groups.setdefault(group_id, {}).setdefault(topic_id, []).append((phone, rec))
+    for g_id, topics in groups.items():
+        group_title = state.group_titles.get(g_id, str(g_id))
+        lines = [f"Группа: {group_title}"]
+        topic_counter = 0
+        for tid in sorted(topics.keys()):
+            topic_counter += 1
+            topic_link = get_topic_link(g_id, tid)
+            lines.append(f"\n<b><a href='{topic_link}'>Тема: {topic_counter}</a></b>")
+            topic_lines = []
+            topic_total_seconds = 0
+            topic_count = 0
+            for phone, rec in topics[tid]:
+                topic_lines.append(format_record(rec, phone))
+                if rec.get("downtime"):
+                    topic_total_seconds += rec["downtime"].total_seconds()
+                    topic_count += 1
+            topic_lines.sort()
+            lines.extend(topic_lines)
+            if topic_count:
+                avg_seconds = topic_total_seconds / topic_count
+                avg_hours = int(avg_seconds // 3600)
+                avg_minutes = int((avg_seconds % 3600) // 60)
+                total_avg_minutes = avg_hours * 60 + avg_minutes
+                marker = " 🔴" if total_avg_minutes < 20 else " 🟠" if total_avg_minutes < 30 else ""
+                lines.append(f"Среднее по пк - {avg_hours}:{avg_minutes:02d}{marker}")
+            else:
+                lines.append("Среднее по пк - 0:00")
+        final_message = "\n".join(lines)
+        keyboard = get_daily_stats_keyboard(g_id)
+        if csv_filename not in state.global_message_ids:
+            state.global_message_ids[csv_filename] = {}
+        for admin_chat_id in admin_chat_ids:
+            global_msgs = state.global_message_ids[csv_filename]
+            try:
+                if admin_chat_id in global_msgs and g_id in global_msgs[admin_chat_id]:
+                    await context.bot.edit_message_text(
+                        chat_id=admin_chat_id,
+                        message_id=global_msgs[admin_chat_id][g_id],
+                        text=final_message,
+                        reply_markup=keyboard,
+                        parse_mode='HTML'
+                    )
+                    logger.info("Обновлено сообщение в чате %s для группы %s", admin_chat_id, g_id)
+                else:
+                    sent_msg = await context.bot.send_message(
+                        chat_id=admin_chat_id,
+                        text=final_message,
+                        reply_markup=keyboard,
+                        parse_mode='HTML'
+                    )
+                    if admin_chat_id not in global_msgs:
+                        global_msgs[admin_chat_id] = {}
+                    global_msgs[admin_chat_id][g_id] = sent_msg.message_id
+                    logger.info("Создано сообщение в чате %s для группы %s с id %s", admin_chat_id, g_id, sent_msg.message_id)
+            except Exception as e:
+                logger.error("Ошибка при обновлении/отправке сообщения в чате %s для группы %s: %s", admin_chat_id, g_id, e)
+
+async def start_tracking(context: CallbackContext, update=None) -> None:
+    logger.info("Запуск отслеживания статистики")
+    csv_filename = context.user_data.get('csv_filename', 'stats.csv')
+    chat_id = None
+    if update:
+        if update.message:
+            chat_id = update.message.chat_id
+        elif update.callback_query and update.callback_query.message:
+            chat_id = update.callback_query.message.chat_id
+    if chat_id:
+        if csv_filename not in state.admin_chat_ids:
+            state.admin_chat_ids[csv_filename] = set()
+        state.admin_chat_ids[csv_filename].add(chat_id)
+        logger.info("Добавлен chat_id %s для CSV '%s'", chat_id, csv_filename)
+    state.tracking_active = True
+    state.stats.clear()
+    state.load_from_csv(csv_filename)
+    await send_grouped_stats(context)
+    if update:
+        if update.message:
+            await update.message.reply_text("Статистика запущена", reply_markup=get_stop_keyboard())
+        elif update.callback_query:
+            await update.callback_query.message.reply_text("Статистика запущена", reply_markup=get_stop_keyboard())
+    logger.info("Отслеживание статистики запущено")
+
+async def stop_tracking(update, context: CallbackContext) -> None:
+    logger.info("Остановка отслеживания статистики")
+    csv_filename = context.user_data.get('csv_filename', 'stats.csv')
+    chat_id = None
+    if update.message:
+        chat_id = update.message.chat_id
+    elif update.callback_query and update.callback_query.message:
+        chat_id = update.callback_query.message.chat_id
+    if chat_id and csv_filename in state.admin_chat_ids and chat_id in state.admin_chat_ids[csv_filename]:
+        state.admin_chat_ids[csv_filename].remove(chat_id)
+        logger.info("Удалён chat_id %s для CSV '%s'", chat_id, csv_filename)
+    state.tracking_active = False
+    if update:
+        if update.message:
+            await update.message.reply_text("Статистика остановлена", reply_markup=get_start_keyboard())
+        elif update.callback_query:
+            await update.callback_query.message.reply_text("Статистика остановлена", reply_markup=get_start_keyboard())
+    logger.info("Отслеживание статистики остановлено")
+
+async def button_handler(update, context: CallbackContext) -> None:
+    logger.info("Обработка нажатия кнопки")
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    if data == "start_tracking":
+        await start_tracking(context, update)
+    elif data == "stop_tracking":
+        await stop_tracking(update, context)
+    elif data.startswith("group_stats_"):
+        group_id = int(data.split('_')[2])
+        group_title = state.group_titles.get(group_id, str(group_id))
+        await update_global_message(group_id, group_title, context, view_mode="grouped")
+    elif data.startswith("daily_stats_"):
+        group_id = int(data.split('_')[2])
+        group_title = state.group_titles.get(group_id, str(group_id))
+        await update_global_message(group_id, group_title, context, view_mode="daily")
+
 
 async def message_handler(update: Update, context: CallbackContext) -> None:
     if not state.tracking_active:
@@ -264,109 +404,3 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
     await update_global_message(group_id, group_title, context)
     logger.info(f"Запрос на сохранение в CSV {context.user_data.get('csv_filename', 'stats.csv')}")
     state.save_to_csv(context.user_data.get('csv_filename', 'stats.csv'))
-
-async def send_grouped_stats(context: CallbackContext) -> None:
-    logger.info("Отправка сгруппированной статистики")
-    if not state.admin_chat_id:
-        logger.warning("admin_chat_id не установлен, статистику отправить невозможно")
-        return
-    groups = {}
-    for (group_id, topic_id, phone), rec in state.stats.items():
-        groups.setdefault(group_id, {}).setdefault(topic_id, []).append((phone, rec))
-    for g_id, topics in groups.items():
-        group_title = state.group_titles.get(g_id, str(g_id))
-        lines = [f"Группа: {group_title}"]
-        topic_counter = 0
-        for tid in sorted(topics.keys()):
-            topic_counter += 1
-            topic_link = get_topic_link(g_id, tid)
-            lines.append(f"\n<b><a href='{topic_link}'>                    Тема: {topic_counter}                    </a></b>")
-            topic_lines = []
-            topic_total_seconds = 0
-            topic_count = 0
-            for phone, rec in topics[tid]:
-                topic_lines.append(format_record(rec, phone))
-                if rec.get("downtime"):
-                    topic_total_seconds += rec["downtime"].total_seconds()
-                    topic_count += 1
-            topic_lines.sort()
-            lines.extend(topic_lines)
-            if topic_count:
-                avg_seconds = topic_total_seconds / topic_count
-                avg_hours = int(avg_seconds // 3600)
-                avg_minutes = int((avg_seconds % 3600) // 60)
-                total_avg_minutes = avg_hours * 60 + avg_minutes
-                marker = " 🔴" if total_avg_minutes < 20 else " 🟠" if total_avg_minutes < 30 else ""
-                lines.append(f"Среднее по пк - {avg_hours}:{avg_minutes:02d}{marker}")
-            else:
-                lines.append("Среднее по пк - 0:00")
-        final_message = "\n".join(lines)
-        keyboard = get_daily_stats_keyboard(g_id)
-        try:
-            sent_msg = await context.bot.send_message(
-                chat_id=state.admin_chat_id,
-                text=final_message,
-                reply_markup=keyboard,
-                parse_mode='HTML'
-            )
-            state.global_message_ids[g_id] = sent_msg.message_id
-            logger.info("Сообщение для группы %s создано с id %s", g_id, sent_msg.message_id)
-        except Exception as e:
-            logger.error("Ошибка при отправке сообщения для группы %s: %s", g_id, e)
-
-async def start_tracking(context: CallbackContext, update=None) -> None:
-    logger.info("Запуск отслеживания статистики")
-    if update:
-        if update.message:
-            state.admin_chat_id = update.message.chat_id
-        elif update.callback_query and update.callback_query.message:
-            state.admin_chat_id = update.callback_query.message.chat_id
-        else:
-            logger.error("Не удалось получить chat_id при запуске отслеживания")
-            return
-    state.tracking_active = True
-    state.stats.clear()
-    state.global_message_ids.clear()
-    csv_filename = context.user_data.get('csv_filename', 'stats.csv')
-    state.load_from_csv(csv_filename)
-    await send_grouped_stats(context)
-    if update:
-        if update.message:
-            await update.message.reply_text("Статистика запущена", reply_markup=get_stop_keyboard())
-        elif update.callback_query:
-            await update.callback_query.message.reply_text("Статистика запущена", reply_markup=get_stop_keyboard())
-    logger.info("Отслеживание статистики запущено")
-
-async def stop_tracking(update, context: CallbackContext) -> None:
-    logger.info("Остановка отслеживания статистики")
-    state.tracking_active = False
-    query = update.callback_query
-    if query:
-        try:
-            await query.edit_message_text(
-                text="Статистика остановлена",
-                reply_markup=get_start_keyboard()
-            )
-            logger.info("Сообщение обновлено: Статистика остановлена")
-        except Exception as e:
-            logger.error("Ошибка при обновлении сообщения при остановке: %s", e)
-    else:
-        await update.message.reply_text("Статистика остановлена", reply_markup=get_start_keyboard())
-
-async def button_handler(update, context: CallbackContext) -> None:
-    logger.info("Обработка нажатия кнопки")
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-    if data == "start_tracking":
-        await start_tracking(context, update)
-    elif data == "stop_tracking":
-        await stop_tracking(update, context)
-    elif data.startswith("group_stats_"):
-        group_id = int(data.split('_')[2])
-        group_title = state.group_titles.get(group_id, str(group_id))
-        await update_global_message(group_id, group_title, context, view_mode="grouped")
-    elif data.startswith("daily_stats_"):
-        group_id = int(data.split('_')[2])
-        group_title = state.group_titles.get(group_id, str(group_id))
-        await update_global_message(group_id, group_title, context, view_mode="daily")

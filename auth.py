@@ -16,29 +16,34 @@ ACCESS_KEYS = {
     "key2": "stats_account2.csv"
 }
 
-
 async def start_auth(update: Update, context: CallbackContext) -> int:
     user_id = update.effective_user.id
-    logger.info(f"Авторизация: Получена команда /start от пользователя {user_id}")
+    chat_id = update.effective_chat.id
+    logger.info("Авторизация: Получена команда /start от пользователя %s (chat_id: %s)", user_id, chat_id)
     await update.message.reply_text("Введите ключ доступа:")
     return ACCESS_KEY_STATE
 
-
 async def process_access_key(update: Update, context: CallbackContext) -> int:
     user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
     access_key = update.message.text.strip()
-    logger.info(f"Авторизация: Пользователь {user_id} ввёл ключ '{access_key}'")
+    logger.info("Авторизация: Пользователь %s (chat_id: %s) ввёл ключ '%s'", user_id, chat_id, access_key)
 
     if access_key in ACCESS_KEYS:
         csv_filename = ACCESS_KEYS[access_key]
         context.user_data['csv_filename'] = csv_filename
-        logger.info(f"Авторизация: Ключ '{access_key}' корректен. Привязан CSV файл: {csv_filename}")
+        logger.info("Авторизация: Ключ '%s' корректен. Привязан CSV файл: %s", access_key, csv_filename)
+
+        # Добавляем chat_id для этого CSV-файла
+        if csv_filename not in state.admin_chat_ids:
+            state.admin_chat_ids[csv_filename] = set()
+        state.admin_chat_ids[csv_filename].add(chat_id)
+        logger.info("Авторизация: Добавлен chat_id %s для CSV '%s'. Текущие chat_id: %s",
+                    chat_id, csv_filename, state.admin_chat_ids[csv_filename])
 
         # Запускаем отслеживание статистики
         state.tracking_active = True
-        state.admin_chat_id = update.message.chat_id
         state.stats.clear()
-        state.global_message_ids.clear()
         state.load_from_csv(csv_filename)
 
         # Отправляем текущую статистику и сообщение о запуске
@@ -47,13 +52,12 @@ async def process_access_key(update: Update, context: CallbackContext) -> int:
             f"Авторизация успешна.\nСтатистика запущена. Данные сохраняются в {csv_filename}.",
             reply_markup=get_stop_keyboard()
         )
-        logger.info(f"Авторизация: Завершена успешно для пользователя {user_id}")
+        logger.info("Авторизация завершена для пользователя %s (chat_id: %s)", user_id, chat_id)
         return ConversationHandler.END
     else:
-        logger.warning(f"Авторизация: Пользователь {user_id} ввёл неверный ключ '{access_key}'")
+        logger.warning("Авторизация: Пользователь %s ввёл неверный ключ '%s'", user_id, access_key)
         await update.message.reply_text("Неверный ключ доступа. Попробуйте ещё раз:")
         return ACCESS_KEY_STATE
-
 
 # ConversationHandler для авторизации
 login_conv_handler = ConversationHandler(
