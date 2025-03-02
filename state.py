@@ -60,7 +60,14 @@ class BotState:
             started_str = started.strftime("%Y-%m-%dT%H:%M:%S") if started else None
             stopped_str = stopped.strftime("%Y-%m-%dT%H:%M:%S") if stopped else None
             downtime = record.get("downtime").total_seconds() if record.get("downtime") else None
-
+            logger.info(f"""\nДанные для записи
+            group_title: {self.group_titles.get(group_id)}
+            started: {started_str}
+            stopped: {stopped_str}
+            downtime: {downtime}
+            phone: {phone}
+            last phone: {self.last_phone.get((group_id, topic_id))}
+""")
             data.append({
                 "group_id": group_id,
                 "topic_id": topic_id,
@@ -77,13 +84,13 @@ class BotState:
         try:
             df = pd.DataFrame(data)
             df.to_csv(filename, index=False)
-            logger.info(f"Данные успешно сохранены в {filename}")
+            logger.info(f"Данные успешно сохранены в {filename}\n\n")
         except Exception as e:
             logger.error(f"Ошибка при сохранении данных в CSV: {e}")
 
     def load_from_csv(self, filename: str = 'stats.csv'):
         if not Path(filename).exists():
-            logger.info(f"Файл {filename} не найден. Начинаем с пустой статистикой.")
+            logger.info(f"Файл {filename} не найден. Начинаем с пустой статистикой.\n\n")
             return
 
         try:
@@ -108,7 +115,7 @@ class BotState:
                     self.global_message_ids[row['group_id']] = row['global_message_id']
                     self.last_phone[(row['group_id'], row['topic_id'])] = row['last_phone']
                     self.group_titles[row['group_id']] = row['group_title']
-            logger.info(f"Данные успешно загружены из {filename}")
+            logger.info(f"Данные успешно загружены из {filename}\n\n")
         except Exception as e:
             logger.error(f"Ошибка при загрузке данных из CSV: {e}")
 

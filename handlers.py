@@ -8,6 +8,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext
 from utils import extract_event_info
 from state import state
+from telegram.ext import ConversationHandler, CommandHandler, MessageHandler, filters
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,54 @@ def get_main_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+# Определяем состояние разговора
+ACCESS_KEY_STATE = 1
+
+# Словарь ключей доступа и соответствующих CSV-файлов.
+ACCESS_KEYS = {
+    "key1": "stats_account1.csv",
+    "key2": "stats_account2.csv"
+}
+
+async def start_auth(update: Update, context: CallbackContext):
+    """Обработчик команды /start. Запрашивает у пользователя ключ доступа."""
+    await update.message.reply_text("Введите ключ доступа:")
+    return ACCESS_KEY_STATE
+
+async def process_access_key(update: Update, context: CallbackContext):
+    """Обрабатывает введённый ключ доступа и запускает отслеживание статистики."""
+    access_key = update.message.text.strip()
+    if access_key in ACCESS_KEYS:
+        csv_filename = ACCESS_KEYS[access_key]
+        context.user_data['csv_filename'] = csv_filename
+
+        # Запускаем отслеживание статистики
+        state.tracking_active = True
+        state.admin_chat_id = update.message.chat_id
+        state.stats.clear()
+        state.global_message_ids.clear()
+        state.load_from_csv(csv_filename)
+
+        # Отправляем сгруппированную статистику (если есть) и сообщение о запуске
+        await send_grouped_stats(context)
+        await update.message.reply_text(
+            f"Авторизация успешна\nСтатистика запущена.",
+            reply_markup=get_stop_keyboard()
+        )
+        return ConversationHandler.END
+    else:
+        await update.message.reply_text("Неверный ключ доступа. Попробуйте ещё раз:")
+        return ACCESS_KEY_STATE
+
+
+# Создаём ConversationHandler для авторизации, передавая ссылки на функции без вызова:
+login_conv_handler = ConversationHandler(
+    entry_points=[CommandHandler('start', start_auth)],
+    states={
+        ACCESS_KEY_STATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_access_key)]
+    },
+    fallbacks=[]
+)
 
 # Функция для проверки и преобразования значения в datetime
 def ensure_datetime(value):
@@ -139,7 +188,7 @@ async def update_global_message(group_id: int, group_title: str, context: Callba
                 reply_markup=keyboard,
                 parse_mode='HTML'
             )
-            logger.info(f"Обновлено сообщение для группы {group_id}")
+            logger.info(f"Обновлено сообщение для группы {group_title}")
         else:
             sent_msg = await context.bot.send_message(
                 chat_id=state.admin_chat_id,
@@ -180,7 +229,7 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
         logger.info(f"Сохранено имя темы: {new_message.forum_topic_created.name} для topic_id {topic_id}")
 
     logger.info(
-        f"Получено {'отредактированное' if update.edited_message else 'новое'} сообщение в группе {group_id} ({chat.title or group_id}): {text}")
+        f"\n\nПолучено {'отредактированное' if update.edited_message else 'новое'} сообщение в группе {group_id} ({chat.title or group_id}): {text}")
 
     # Удаляем только символы '-', '+', '(', ')', и пробелы
     phone_candidate = re.sub(r'[-+() ]', '', text)
@@ -188,7 +237,7 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
     # Если после очистки остались только цифры и длина строки больше 8
     if phone_candidate.isdigit() and len(phone_candidate) > 8:
         state.last_phone[(group_id, topic_id)] = phone_candidate
-        logger.info(f"Запомнен номер {phone_candidate} для темы {topic_id} группы {group_id}.")
+        logger.info(f"Запомнен номер {phone_candidate} для темы {topic_id} группы {group_id}.\n\n")
         return
 
     extraction = await asyncio.to_thread(extract_event_info, text, topic_id, message_sent)
@@ -197,7 +246,7 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
     # Если извлеченные данные не содержат полезной информации, игнорируем сообщение
     if extraction.get("phone") is None and not extraction.get("started", False) and not extraction.get("stopped",
                                                                                                        False):
-        logger.info(f"Сообщение не содержит полезной информации и будет проигнорировано.")
+        logger.info(f"Сообщение не содержит полезной информации и будет проигнорировано.\n\n")
         return
     # Если извлеченные данные содержат только номер запоминаем его
     if not extraction.get("phone") is None and not extraction.get("started", False) and not extraction.get(
@@ -207,6 +256,7 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
         logger.info(f"Запомнен номер {phone_extracted} для темы {topic_id} группы {group_id}.")
         return
 
+    # Присваиваем переменным значение
     phone_extracted = extraction.get("phone")
     started_flag = extraction.get("started", False)
     stopped_flag = extraction.get("stopped", False)
@@ -224,6 +274,7 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
         else:
             logger.info(f"Нет номера для события в теме {extracted_topic_id} группы {group_id}.")
             return
+
 
     key = (group_id, extracted_topic_id, phone_extracted)
 
@@ -269,7 +320,9 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
     state.stats[key] = record
     group_title = chat.title if chat.title else str(group_id)
     await update_global_message(group_id, group_title, context)
-    state.save_to_csv()
+    logger.info(f"Запрос на сохранение в CSV {context.user_data.get('csv_filename', 'stats.csv')}")
+    state.save_to_csv(context.user_data.get('csv_filename', 'stats.csv'))
+
 
 
 async def send_grouped_stats(context: CallbackContext):
@@ -338,28 +391,18 @@ async def send_grouped_stats(context: CallbackContext):
             logger.error(f"Ошибка при отправке сообщения для группы {g_id}: {e}")
 
 
-AUTHORIZED_USERS = [6546400704]  # Пример разрешённых user_id
-
-
-# --------------------------------BUTTON HANDLERS-------------------------------------
 async def start_tracking(update: Update, context: CallbackContext):
-    # Если это callback_query (нажатие кнопки), используем query
-    if update.callback_query:
-        user_id = update.callback_query.from_user.id  # Получаем user_id из callback_query
-    elif update.message:
-        user_id = update.message.from_user.id  # Получаем user_id из message
-    else:
-        return  # Если update не содержит ни message, ни callback_query, выходим из функции
+    # Проверяем, что пользователь авторизован (т.е. в context.user_data сохранён csv_filename)
+    if 'csv_filename' not in context.user_data:
+        if update.message:
+            await update.message.reply_text("Вы не авторизованы. Введите ключ доступа через команду /start.")
+        elif update.callback_query:
+            await update.callback_query.message.reply_text("Вы не авторизованы. Введите ключ доступа через команду /start.")
+        return
 
-    # Проверка авторизации
-    if user_id not in AUTHORIZED_USERS:
-        await update.callback_query.message.reply_text(
-            "У вас нет доступа к этому боту.") if update.callback_query else await update.message.reply_text(
-            "У вас нет доступа к этому боту.")
-        return  # Прекращаем выполнение, если пользователь не авторизован
     state.tracking_active = True
 
-    # Используем update.message, если это не callback_query, а обычное сообщение
+    # Определяем chat_id
     if update.message:
         state.admin_chat_id = update.message.chat_id
     elif update.callback_query and update.callback_query.message:
@@ -370,19 +413,18 @@ async def start_tracking(update: Update, context: CallbackContext):
 
     state.stats.clear()
     state.global_message_ids.clear()
-    state.load_from_csv()  # Загрузка статистики из CSV файла
+    # Загружаем статистику из CSV для данного аккаунта
+    state.load_from_csv(context.user_data.get('csv_filename', 'stats.csv'))
 
-    # Отправка всех имеющихся данных в виде группировки по темам
+    # Отправляем все имеющиеся данные в виде группировки по темам
     await send_grouped_stats(context)
 
-    # Отправить новое сообщение с кнопкой "Стоп"
-    await update.message.reply_text(
-        "Статистика запущена",
-        reply_markup=get_stop_keyboard()  # Кнопка "Стоп"
-    ) if update.message else await update.callback_query.message.reply_text(
-        "Статистика запущена",
-        reply_markup=get_stop_keyboard()  # Кнопка "Стоп"
-    )
+    # Отправляем сообщение, что статистика запущена, с кнопкой "Стоп"
+    if update.message:
+        await update.message.reply_text("Статистика запущена", reply_markup=get_stop_keyboard())
+    elif update.callback_query:
+        await update.callback_query.message.reply_text("Статистика запущена", reply_markup=get_stop_keyboard())
+
 
 
 from datetime import datetime

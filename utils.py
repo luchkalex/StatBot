@@ -16,7 +16,7 @@ def extract_event_info(text: str, default_topic_id: int, message_sent_time) -> d
 
         phone: phone number (the number may include a + or be in the format +7 995 488-58-59, but it should be output without the + and any separators; if only a number is specified in the message, then it is the number), otherwise null.
     
-        started: true, if the message explicitly states that the number has started working (e.g., 'встал', 'работает', 'зашел', '+') (also consider typos like 'вслат', 'стлоит', 'сашел', etc.), otherwise false. If 'встал' or similar is followed by a question, e.g., 'работает?', 'встал?', then False.
+        started: true, if the message explicitly states that the number has started working (e.g., 'встал', 'работает', 'зашел', '+') (also consider typos like 'вслат', 'стлоит', 'сашел', etc.), otherwise e.g. ('ошибка' 'новый' 'этот') false. If 'встал' or similar is followed by a question, e.g., 'работает?', 'встал?', then False.
     
         stopped: true, if the message explicitly states that the number has stopped working (e.g., 'слетел', 'умер', '-', '#СЛЕТ') (also consider typos like 'стел', 'стелел', etc.), otherwise false. If 'слетел' or similar is followed by a question, e.g., 'слет?', 'минус?', then False.
     
