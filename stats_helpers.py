@@ -66,7 +66,10 @@ async def update_global_message(
         topics = {}
         unique_phones_today = set()
         standing_now = 0
-        for (g_id, topic_id, phone), rec in state.stats.items():
+        for (file_key, g_id, topic_id, phone), rec in state.stats.items():
+            if file_key != csv_filename:
+                continue
+
             if g_id == group_id:
                 topics.setdefault(topic_id, []).append((phone, rec))
                 unique_phones_today.add(phone)
@@ -161,14 +164,16 @@ async def update_global_message(
 
 # Новая функция для обновления статистики для всех активных ключей (CSV-файлов)
 async def update_all_stats(context: CallbackContext, view_mode: str = "grouped") -> None:
-    # Для каждого активного CSV-файла (ключа) обновляем сообщения для всех групп,
-    # найденных в общей статистике.
+    # Обновляем статистику только для групп, разрешённых для каждого csv_filename
     for csv_filename in state.admin_chat_ids.keys():
-        group_ids = {group_id for (group_id, _, _) in state.stats.keys()}
+        # Собираем группы из статистики, относящиеся к данному csv_filename
+        group_ids = {group_id for (file_key, group_id, _, _ ) in state.stats.keys() if file_key == csv_filename}
         for group_id in group_ids:
+            # Если группа не входит в разрешённые для данного ключа – пропускаем
+            if group_id not in state.allowed_groups.get(csv_filename, {}):
+                continue
             group_title = state.group_titles.get(group_id, str(group_id))
             await update_global_message(group_id, group_title, context, view_mode=view_mode, csv_filename=csv_filename)
-        # Сохраняем данные в соответствующий CSV‑файл
         state.save_to_csv(csv_filename)
 
 async def send_grouped_stats(context: CallbackContext) -> None:
@@ -180,7 +185,10 @@ async def send_grouped_stats(context: CallbackContext) -> None:
         return
 
     groups = {}
-    for (group_id, topic_id, phone), rec in state.stats.items():
+
+    for (file_key, group_id, topic_id, phone), rec in state.stats.items():
+        if file_key != csv_filename:
+            continue
         groups.setdefault(group_id, {}).setdefault(topic_id, []).append((phone, rec))
     for g_id, topics in groups.items():
         group_title = state.group_titles.get(g_id, str(g_id))
@@ -305,57 +313,54 @@ async def button_handler(update, context: CallbackContext) -> None:
 async def message_handler(update: Update, context: CallbackContext) -> None:
     if not state.tracking_active:
         return
+
     new_message = None
     if update.edited_message and update.edited_message.text:
         new_message = update.edited_message
     elif update.message and update.message.text:
         new_message = update.message
 
-    # Если нет текста в сообщении или отредактированном сообщении, выходим
     if not new_message:
         return
 
-    # Теперь у нас есть новое сообщение или отредактированное сообщение в переменной new_message
     text = new_message.text.strip()
     message_sent = new_message.date.astimezone(pytz.timezone("Europe/Kiev"))
     chat = new_message.chat
     group_id = chat.id
-    topic_id = new_message.message_thread_id if new_message.message_thread_id is not None else group_id
+
+    # Проверяем, что группа есть в списке разрешённых хотя бы для одного аккаунта
+    if group_id not in state.group_to_keys:
+        logger.info("Группа %s не входит в список разрешённых для сбора статистики.", group_id)
+        return
+
     if chat.title:
         state.group_titles[group_id] = chat.title
+    topic_id = new_message.message_thread_id if new_message.message_thread_id is not None else group_id
     if new_message.forum_topic_created:
         state.topic_names[(group_id, topic_id)] = new_message.forum_topic_created.name
         logger.info(f"Сохранено имя темы: {new_message.forum_topic_created.name} для topic_id {topic_id}")
 
-    logger.info(
-        f"\n\nПолучено {'отредактированное' if update.edited_message else 'новое'} сообщение в группе {group_id} ({chat.title or group_id}): {text}")
+    logger.info("Получено сообщение в группе %s (%s): %s", group_id, chat.title or group_id, text)
 
-    # Удаляем только символы '-', '+', '(', ')', и пробелы
     phone_candidate = re.sub(r'[-+() ]', '', text)
-
-    # Если после очистки остались только цифры и длина строки больше 8
     if phone_candidate.isdigit() and len(phone_candidate) > 8:
         state.last_phone[(group_id, topic_id)] = phone_candidate
-        logger.info(f"Запомнен номер {phone_candidate} для темы {topic_id} группы {group_id}.\n\n")
+        logger.info("Запомнен номер %s для темы %s группы %s.", phone_candidate, topic_id, group_id)
         return
 
     extraction = await asyncio.to_thread(extract_event_info, text, topic_id, message_sent)
-    logger.info(f"Извлеченные данные: {extraction}")
+    logger.info("Извлеченные данные: %s", extraction)
 
-    # Если извлеченные данные не содержат полезной информации, игнорируем сообщение
-    if extraction.get("phone") is None and not extraction.get("started", False) and not extraction.get("stopped",
-                                                                                                       False):
-        logger.info(f"Сообщение не содержит полезной информации и будет проигнорировано.\n\n")
+    if extraction.get("phone") is None and not extraction.get("started", False) and not extraction.get("stopped", False):
+        logger.info("Сообщение не содержит полезной информации и будет проигнорировано.")
         return
-    # Если извлеченные данные содержат только номер запоминаем его
-    if not extraction.get("phone") is None and not extraction.get("started", False) and not extraction.get(
-            "stopped", False):
+
+    if extraction.get("phone") is not None and not extraction.get("started", False) and not extraction.get("stopped", False):
         phone_extracted = extraction.get("phone")
         state.last_phone[(group_id, topic_id)] = phone_extracted
-        logger.info(f"Запомнен номер {phone_extracted} для темы {topic_id} группы {group_id}.")
+        logger.info("Запомнен номер %s для темы %s группы %s.", phone_extracted, topic_id, group_id)
         return
 
-    # Присваиваем переменным значение
     phone_extracted = extraction.get("phone")
     started_flag = extraction.get("started", False)
     stopped_flag = extraction.get("stopped", False)
@@ -366,58 +371,54 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
     if phone_extracted:
         state.last_phone[(group_id, extracted_topic_id)] = phone_extracted
 
-    # Если номер не указан, пробуем взять последний запомненный номер для темы
     if not phone_extracted and (started_flag or stopped_flag):
         if (group_id, extracted_topic_id) in state.last_phone:
             phone_extracted = state.last_phone[(group_id, extracted_topic_id)]
         else:
-            logger.info(f"Нет номера для события в теме {extracted_topic_id} группы {group_id}.")
+            logger.info("Нет номера для события в теме %s группы %s.", extracted_topic_id, group_id)
             return
 
+    # Для каждой привязки данной группы (каждого csv_filename) обновляем статистику
+    csv_filenames = state.group_to_keys.get(group_id, set())
+    for csv_filename in csv_filenames:
+        key = (csv_filename, group_id, extracted_topic_id, phone_extracted)
+        record = state.stats.get(key, {})
 
-    key = (group_id, extracted_topic_id, phone_extracted)
+        if started_flag:
+            record["started"] = started_time_str
+            record["stopped"] = None
+            record["downtime"] = None
 
-
-    record = state.stats.get(key, {})
-    # Обработка события "встал"
-    if started_flag:
-        record["started"] = started_time_str
-        record["stopped"] = None
-        record["downtime"] = None
-
-    # Обработка события "слетел"
-    if stopped_flag:
-        if record.get("started"):
-            record["stopped"] = stopped_time_str
-            # Преобразуем 'started' и 'stopped' в datetime перед вычитанием
-            started_time = convert_to_datetime(record.get("started"))
-            stopped_time = convert_to_datetime(record.get("stopped"))
-
-            # Если обе переменные стали datetime, вычисляем downtime
-            if started_time and stopped_time:
-                record["downtime"] = stopped_time - started_time
+        if stopped_flag:
+            if record.get("started"):
+                record["stopped"] = stopped_time_str
+                started_time = convert_to_datetime(record.get("started"))
+                stopped_time = convert_to_datetime(record.get("stopped"))
+                if started_time and stopped_time:
+                    record["downtime"] = stopped_time - started_time
+                else:
+                    record["downtime"] = None
             else:
-                record["downtime"] = None  # Если одно из значений не удалось преобразовать в datetime
+                candidate_key = None
+                candidate_record = None
+                for (f, g, tid, ph), rec in state.stats.items():
+                    if f == csv_filename and g == group_id and tid == extracted_topic_id and rec.get("started") and rec.get("stopped") is None:
+                        if candidate_record is None or rec["started"] > candidate_record["started"]:
+                            candidate_key = (f, g, tid, ph)
+                            candidate_record = rec
+                if candidate_record is None:
+                    logger.info("Нет записи 'встал' для события 'слетел'.")
+                    continue
+                key = candidate_key
+                record = candidate_record
+                record["stopped"] = stopped_time_str
+                record["downtime"] = record["stopped"] - record["started"]
 
-        else:
-            # Если записи с событием "встал" нет, ищем подходящую запись по теме
-            candidate_key = None
-            candidate_record = None
-            for (g, tid, ph), rec in state.stats.items():
-                if g == group_id and tid == extracted_topic_id and rec.get("started") and rec.get("stopped") is None:
-                    if candidate_record is None or rec["started"] > candidate_record["started"]:
-                        candidate_key = (g, tid, ph)
-                        candidate_record = rec
-            if candidate_record is None:
-                logger.info("Нет записи 'встал' для события 'слетел'")
-                return
-            key = candidate_key
-            record = candidate_record
-            record["stopped"] = stopped_time_str
-            record["downtime"] = record["stopped"] - record["started"]
+        state.stats[key] = record
 
-    state.stats[key] = record
-    group_title = chat.title if chat.title else str(group_id)
+    # После обработки сообщения обновляем статистику для всех csv-файлов
     await update_all_stats(context)
-    logger.info(f"Запрос на сохранение в CSV {context.user_data.get('csv_filename', 'stats.csv')}")
-    state.save_to_csv(context.user_data.get('csv_filename', 'stats.csv'))
+    # Вызываем сохранение для каждого csv_filename, с которым связана группа
+    for csv_filename in csv_filenames:
+        state.save_to_csv(csv_filename)
+

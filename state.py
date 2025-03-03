@@ -21,22 +21,33 @@ def convert_to_datetime(value):
 class BotState:
     def __init__(self):
         self.tracking_active: bool = False
-        # Для поддержки нескольких сессий (админов), использующих один CSV‑файл,
-        # admin_chat_ids – отображение: CSV filename -> set(chat_id)
+        # Для поддержки нескольких сессий (админов), использующих один CSV‑файл:
+        # admin_chat_ids: CSV filename -> set(chat_id)
         self.admin_chat_ids: dict[str, set[int]] = {}
         # Глобальные сообщения: CSV filename -> { chat_id -> { group_id -> message_id } }
         self.global_message_ids: dict[str, dict[int, dict[int, int]]] = {}
-        self.stats = {}  # Ключ: (group_id, topic_id, phone) -> {"started": ..., "stopped": ..., "downtime": ...}
+        # Статистика теперь хранится с ключом: (csv_filename, group_id, topic_id, phone)
+        self.stats = {}
         self.topic_names = {}  # (group_id, topic_id) -> topic name
         self.last_phone = {}   # (group_id, topic_id) -> phone
         self.group_titles = {} # group_id -> group title
+
+        # Новые структуры для разрешённых групп:
+        # allowed_groups: csv_filename -> { group_id: group_name }
+        self.allowed_groups = {}
+        # group_to_key: group_id -> csv_filename
+        # Новая структура: для каждой группы – набор CSV‑файлов (ключей), к которым она привязана
+        self.group_to_keys: dict[int, set[str]] = {}
 
     def save_to_csv(self, filename: str = 'stats.csv'):
         if not self.stats:
             logger.info("Нет данных для сохранения в CSV.")
             return
         data = []
-        for (group_id, topic_id, phone), record in self.stats.items():
+        for (file_key, group_id, topic_id, phone), record in self.stats.items():
+            # Сохраняем записи только для нужного CSV‑файла
+            if file_key != filename:
+                continue
             started = convert_to_datetime(record.get("started"))
             stopped = convert_to_datetime(record.get("stopped"))
             started_str = started.strftime("%Y-%m-%dT%H:%M:%S") if started else None
@@ -50,7 +61,7 @@ class BotState:
                 "stopped": stopped_str,
                 "downtime": downtime,
                 "topic_name": self.topic_names.get((group_id, topic_id)),
-                "global_message_id": None,  # Глобальные id не сохраняем в CSV
+                "global_message_id": None,
                 "last_phone": self.last_phone.get((group_id, topic_id)),
                 "group_title": self.group_titles.get(group_id)
             })
@@ -72,7 +83,7 @@ class BotState:
                 started_date = pd.to_datetime(row['started']).date() if pd.notna(row['started']) else None
                 stopped_date = pd.to_datetime(row['stopped']).date() if pd.notna(row['stopped']) else None
                 if started_date == local_now or stopped_date == local_now:
-                    key = (row['group_id'], row['topic_id'], row['phone'])
+                    key = (filename, row['group_id'], row['topic_id'], row['phone'])
                     self.stats[key] = {
                         "started": pd.to_datetime(row['started']) if pd.notna(row['started']) else None,
                         "stopped": pd.to_datetime(row['stopped']) if pd.notna(row['stopped']) else None,
