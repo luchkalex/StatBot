@@ -3,6 +3,18 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 logger = logging.getLogger(__name__)
 
+# keyboards.py
+from telegram import ReplyKeyboardMarkup
+
+def get_main_keyboard() -> ReplyKeyboardMarkup:
+    keyboard = [
+        ["/start", "/stop"],
+        ["/add_group", "/remove_group"],
+        ["/list_groups"]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
 def get_stop_keyboard() -> InlineKeyboardMarkup:
     logger.debug("Создание клавиатуры 'Стоп'")
     keyboard = [
@@ -28,12 +40,5 @@ def get_daily_stats_keyboard(group_id: int) -> InlineKeyboardMarkup:
     logger.debug(f"Создание клавиатуры 'Статистика по группе' для группы {group_id}")
     keyboard = [
         [InlineKeyboardButton("Статистика по группе", callback_data=f"daily_stats_{group_id}")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-def get_main_keyboard() -> InlineKeyboardMarkup:
-    logger.debug("Создание основной клавиатуры")
-    keyboard = [
-        [InlineKeyboardButton("Стоп", callback_data="stop_tracking")]
     ]
     return InlineKeyboardMarkup(keyboard)

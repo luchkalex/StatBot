@@ -3,7 +3,7 @@ from telegram import Update
 from telegram.ext import ConversationHandler, CommandHandler, MessageHandler, filters, CallbackContext
 
 from config import ACCESS_KEYS
-from keyboards import get_stop_keyboard
+from keyboards import get_stop_keyboard, get_main_keyboard
 from stats_helpers import send_grouped_stats
 from state import state
 from groups_csv import load_allowed_groups  # импорт нового модуля
@@ -53,7 +53,7 @@ async def process_access_key(update: Update, context: CallbackContext) -> int:
         await send_grouped_stats(context)
         await update.message.reply_text(
             f"Авторизация успешна.\nСтатистика запущена. Данные сохраняются в {csv_filename}.",
-            reply_markup=get_stop_keyboard()
+            reply_markup=get_main_keyboard()
         )
         logger.info("Авторизация завершена для пользователя %s (chat_id: %s)", user_id, chat_id)
         return ConversationHandler.END

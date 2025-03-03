@@ -10,7 +10,8 @@ import logging
 import pytz
 from datetime import datetime
 from telegram.ext import CallbackContext
-from keyboards import get_daily_stats_keyboard, get_group_stats_keyboard, get_stop_keyboard, get_start_keyboard
+from keyboards import get_daily_stats_keyboard, get_group_stats_keyboard, get_stop_keyboard, get_start_keyboard, \
+    get_main_keyboard
 from state import state
 from utils import extract_event_info
 from utils_helpers import ensure_datetime, convert_to_datetime
@@ -66,10 +67,10 @@ async def update_global_message(
         topics = {}
         unique_phones_today = set()
         standing_now = 0
+        # Фильтруем статистику по нужному csv_filename
         for (file_key, g_id, topic_id, phone), rec in state.stats.items():
             if file_key != csv_filename:
                 continue
-
             if g_id == group_id:
                 topics.setdefault(topic_id, []).append((phone, rec))
                 unique_phones_today.add(phone)
@@ -102,6 +103,7 @@ async def update_global_message(
         lines.append(f"\n\nПоставили: {len(unique_phones_today)}")
         lines.append(f"Стоят сейчас: {standing_now}")
         final_message = "\n".join(lines)
+        # Предлагаем кнопку для переключения в режим daily
         keyboard = get_daily_stats_keyboard(group_id)
     elif view_mode == "daily":
         lines = [f"Группа: {group_title}"]
@@ -109,7 +111,9 @@ async def update_global_message(
         count = 0
         unique_phones_today = set()
         standing_now = 0
-        daily_records = [(phone, rec) for (g_id, _, phone), rec in state.stats.items() if g_id == group_id]
+        # Здесь также фильтруем записи по csv_filename
+        daily_records = [(phone, rec) for (file_key, g_id, _, phone), rec in state.stats.items()
+                         if file_key == csv_filename and g_id == group_id]
         daily_sorted = sorted(daily_records, key=lambda item: ensure_datetime(item[1].get("started")))
         for phone, rec in daily_sorted:
             lines.append(format_record(rec, phone))
@@ -129,6 +133,7 @@ async def update_global_message(
         lines.append(f"\nПоставили: {len(unique_phones_today)}")
         lines.append(f"Стоят сейчас: {standing_now}")
         final_message = "\n".join(lines)
+        # Кнопка для переключения в режим grouped
         keyboard = get_group_stats_keyboard(group_id)
     else:
         logger.error("Неверный режим отображения: %s", view_mode)
@@ -162,16 +167,14 @@ async def update_global_message(
         except Exception as e:
             logger.error("Ошибка при обновлении/отправке сообщения в чате %s для группы %s: %s", admin_chat_id, group_id, e)
 
-# Новая функция для обновления статистики для всех активных ключей (CSV-файлов)
+
 async def update_all_stats(context: CallbackContext, view_mode: str = "grouped") -> None:
-    # Обновляем статистику только для групп, разрешённых для каждого csv_filename
+    # Для каждого активного CSV‑файла обновляем сообщения только для групп,
+    # у которых есть статистика для данного файла
     for csv_filename in state.admin_chat_ids.keys():
-        # Собираем группы из статистики, относящиеся к данному csv_filename
-        group_ids = {group_id for (file_key, group_id, _, _ ) in state.stats.keys() if file_key == csv_filename}
+        # Выбираем группы для этого csv_filename
+        group_ids = {group_id for (file_key, group_id, _, _) in state.stats.keys() if file_key == csv_filename}
         for group_id in group_ids:
-            # Если группа не входит в разрешённые для данного ключа – пропускаем
-            if group_id not in state.allowed_groups.get(csv_filename, {}):
-                continue
             group_title = state.group_titles.get(group_id, str(group_id))
             await update_global_message(group_id, group_title, context, view_mode=view_mode, csv_filename=csv_filename)
         state.save_to_csv(csv_filename)
@@ -267,9 +270,9 @@ async def start_tracking(context: CallbackContext, update=None) -> None:
     await send_grouped_stats(context)
     if update:
         if update.message:
-            await update.message.reply_text("Статистика запущена", reply_markup=get_stop_keyboard())
+            await update.message.reply_text("Статистика запущена", reply_markup=get_main_keyboard())
         elif update.callback_query:
-            await update.callback_query.message.reply_text("Статистика запущена", reply_markup=get_stop_keyboard())
+            await update.callback_query.message.reply_text("Статистика запущена", reply_markup=get_main_keyboard())
     logger.info("Отслеживание статистики запущено")
 
 async def stop_tracking(update, context: CallbackContext) -> None:
@@ -286,9 +289,9 @@ async def stop_tracking(update, context: CallbackContext) -> None:
     state.tracking_active = False
     if update:
         if update.message:
-            await update.message.reply_text("Статистика остановлена", reply_markup=get_start_keyboard())
+            await update.message.reply_text("Статистика остановлена", reply_markup=get_main_keyboard())
         elif update.callback_query:
-            await update.callback_query.message.reply_text("Статистика остановлена", reply_markup=get_start_keyboard())
+            await update.callback_query.message.reply_text("Статистика остановлена", reply_markup=get_main_keyboard())
     logger.info("Отслеживание статистики остановлено")
 
 async def button_handler(update, context: CallbackContext) -> None:
@@ -309,7 +312,6 @@ async def button_handler(update, context: CallbackContext) -> None:
         group_title = state.group_titles.get(group_id, str(group_id))
         await update_global_message(group_id, group_title, context, view_mode="daily")
 
-
 async def message_handler(update: Update, context: CallbackContext) -> None:
     if not state.tracking_active:
         return
@@ -327,38 +329,33 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
     message_sent = new_message.date.astimezone(pytz.timezone("Europe/Kiev"))
     chat = new_message.chat
     group_id = chat.id
-
-    # Проверяем, что группа есть в списке разрешённых хотя бы для одного аккаунта
-    if group_id not in state.group_to_keys:
-        logger.info("Группа %s не входит в список разрешённых для сбора статистики.", group_id)
-        return
-
+    topic_id = new_message.message_thread_id if new_message.message_thread_id is not None else group_id
     if chat.title:
         state.group_titles[group_id] = chat.title
-    topic_id = new_message.message_thread_id if new_message.message_thread_id is not None else group_id
     if new_message.forum_topic_created:
         state.topic_names[(group_id, topic_id)] = new_message.forum_topic_created.name
         logger.info(f"Сохранено имя темы: {new_message.forum_topic_created.name} для topic_id {topic_id}")
 
-    logger.info("Получено сообщение в группе %s (%s): %s", group_id, chat.title or group_id, text)
+    logger.info(
+        f"\n\nПолучено {'отредактированное' if update.edited_message else 'новое'} сообщение в группе {group_id} ({chat.title or group_id}): {text}"
+    )
 
     phone_candidate = re.sub(r'[-+() ]', '', text)
     if phone_candidate.isdigit() and len(phone_candidate) > 8:
         state.last_phone[(group_id, topic_id)] = phone_candidate
-        logger.info("Запомнен номер %s для темы %s группы %s.", phone_candidate, topic_id, group_id)
+        logger.info(f"Запомнен номер {phone_candidate} для темы {topic_id} группы {group_id}.")
         return
 
     extraction = await asyncio.to_thread(extract_event_info, text, topic_id, message_sent)
-    logger.info("Извлеченные данные: %s", extraction)
+    logger.info(f"Извлеченные данные: {extraction}")
 
     if extraction.get("phone") is None and not extraction.get("started", False) and not extraction.get("stopped", False):
         logger.info("Сообщение не содержит полезной информации и будет проигнорировано.")
         return
-
     if extraction.get("phone") is not None and not extraction.get("started", False) and not extraction.get("stopped", False):
         phone_extracted = extraction.get("phone")
         state.last_phone[(group_id, topic_id)] = phone_extracted
-        logger.info("Запомнен номер %s для темы %s группы %s.", phone_extracted, topic_id, group_id)
+        logger.info(f"Запомнен номер {phone_extracted} для темы {topic_id} группы {group_id}.")
         return
 
     phone_extracted = extraction.get("phone")
@@ -375,10 +372,10 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
         if (group_id, extracted_topic_id) in state.last_phone:
             phone_extracted = state.last_phone[(group_id, extracted_topic_id)]
         else:
-            logger.info("Нет номера для события в теме %s группы %s.", extracted_topic_id, group_id)
+            logger.info(f"Нет номера для события в теме {extracted_topic_id} группы {group_id}.")
             return
 
-    # Для каждой привязки данной группы (каждого csv_filename) обновляем статистику
+    # Получаем список CSV-файлов (аккаунтов), к которым привязана данная группа
     csv_filenames = state.group_to_keys.get(group_id, set())
     for csv_filename in csv_filenames:
         key = (csv_filename, group_id, extracted_topic_id, phone_extracted)
@@ -416,9 +413,8 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
 
         state.stats[key] = record
 
-    # После обработки сообщения обновляем статистику для всех csv-файлов
+    # После обработки сообщения обновляем статистику для всех аккаунтов, к которым привязана группа
     await update_all_stats(context)
-    # Вызываем сохранение для каждого csv_filename, с которым связана группа
+    # Сохраняем данные для каждого CSV‑файла отдельно
     for csv_filename in csv_filenames:
         state.save_to_csv(csv_filename)
-
