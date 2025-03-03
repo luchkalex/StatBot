@@ -10,10 +10,9 @@ def get_main_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
         ["/start", "/stop"],
         ["/add_group", "/remove_group"],
-        ["/list_groups"]
+        ["/list_groups", "/relaunch_stat"]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
 
 def get_stop_keyboard() -> InlineKeyboardMarkup:
     logger.debug("Создание клавиатуры 'Стоп'")

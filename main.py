@@ -4,13 +4,15 @@ import logging
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ConversationHandler
 
 from auth import login_conv_handler
-from stats_helpers import stop_tracking, button_handler, message_handler
+from stats_helpers import stop_tracking, button_handler, message_handler, relaunch_stat
 from groups_commands import add_group, remove_group, list_groups
 from config import TELEGRAM_BOT_TOKEN
 
 nest_asyncio.apply()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
 
 async def main() -> None:
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
@@ -24,6 +26,7 @@ async def main() -> None:
     app.add_handler(CommandHandler("add_group", add_group))
     app.add_handler(CommandHandler("remove_group", remove_group))
     app.add_handler(CommandHandler("list_groups", list_groups))
+    app.add_handler(CommandHandler("relaunch_stat", relaunch_stat))
 
     logger.info("Бот запущен")
     await app.run_polling()

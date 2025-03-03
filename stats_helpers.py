@@ -312,6 +312,17 @@ async def button_handler(update, context: CallbackContext) -> None:
         group_title = state.group_titles.get(group_id, str(group_id))
         await update_global_message(group_id, group_title, context, view_mode="daily")
 
+# В stats_helpers.py
+async def relaunch_stat(update: Update, context: CallbackContext) -> None:
+    # Проверяем, авторизован ли пользователь (наличие csv_filename в context.user_data)
+    csv_filename = context.user_data.get('csv_filename')
+    if not csv_filename:
+        await update.message.reply_text("Вы не авторизованы. Пожалуйста, используйте /start для авторизации.")
+        return
+    # Вызываем существующую функцию старта сбора статистики
+    await start_tracking(context, update)
+
+
 async def message_handler(update: Update, context: CallbackContext) -> None:
     if not state.tracking_active:
         return
