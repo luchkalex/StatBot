@@ -275,9 +275,34 @@ async def start_tracking(context: CallbackContext, update=None) -> None:
             await update.callback_query.message.reply_text("Статистика запущена", reply_markup=get_main_keyboard())
     logger.info("Отслеживание статистики запущено")
 
-async def stop_tracking(update, context: CallbackContext) -> None:
+
+async def stop_tracking(update: Update, context: CallbackContext) -> None:
+    import pytz
+    from datetime import datetime
+    from utils_helpers import convert_to_datetime
+
     logger.info("Остановка отслеживания статистики")
     csv_filename = context.user_data.get('csv_filename', 'stats.csv')
+
+    # Получаем текущее местное время в часовом поясе Europe/Kiev в формате "HH:MM"
+    local_now = datetime.now(pytz.timezone("Europe/Kiev"))
+    local_now_str = local_now.strftime("%H:%M")
+
+    # Проходим по всем записям для данного CSV‑файла и для активных номеров (без stopped) устанавливаем время остановки
+    for key, record in state.stats.items():
+        # key = (csv_filename, group_id, topic_id, phone)
+        if key[0] == csv_filename and not record.get("stopped"):
+            record["stopped"] = local_now_str
+            if record.get("started"):
+                started_dt = convert_to_datetime(record.get("started"))
+                stopped_dt = convert_to_datetime(record.get("stopped"))
+                if started_dt and stopped_dt:
+                    record["downtime"] = stopped_dt - started_dt
+
+    # Обновляем сообщения для всех групп, связанных с данным ключом
+    await update_all_stats(context, view_mode="grouped")
+
+    # Обработка остановки для текущего пользователя (удаление chat_id из списка активных)
     chat_id = None
     if update.message:
         chat_id = update.message.chat_id
@@ -286,13 +311,17 @@ async def stop_tracking(update, context: CallbackContext) -> None:
     if chat_id and csv_filename in state.admin_chat_ids and chat_id in state.admin_chat_ids[csv_filename]:
         state.admin_chat_ids[csv_filename].remove(chat_id)
         logger.info("Удалён chat_id %s для CSV '%s'", chat_id, csv_filename)
+
     state.tracking_active = False
+
     if update:
         if update.message:
-            await update.message.reply_text("Статистика остановлена", reply_markup=get_main_keyboard())
+            await update.message.reply_text("Статистика остановлена и обновлена", reply_markup=get_main_keyboard())
         elif update.callback_query:
-            await update.callback_query.message.reply_text("Статистика остановлена", reply_markup=get_main_keyboard())
+            await update.callback_query.message.reply_text("Статистика остановлена и обновлена",
+                                                           reply_markup=get_main_keyboard())
     logger.info("Отслеживание статистики остановлено")
+
 
 async def button_handler(update, context: CallbackContext) -> None:
     logger.info("Обработка нажатия кнопки")
