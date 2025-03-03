@@ -4,9 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="c5c855c2-7671-431f-90b7-216cafbd138d" name="Changes" comment="Add group and remove group edit process">
+    <list default="true" id="c5c855c2-7671-431f-90b7-216cafbd138d" name="Changes" comment="Wellcome message added">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/auth.py" beforeDir="false" afterPath="$PROJECT_DIR$/auth.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/config.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -246,7 +247,15 @@
       <option name="project" value="LOCAL" />
       <updated>1741010065247</updated>
     </task>
-    <option name="localTasksCounter" value="19" />
+    <task id="LOCAL-00019" summary="Wellcome message added">
+      <option name="closed" value="true" />
+      <created>1741011662585</created>
+      <option name="number" value="00019" />
+      <option name="presentableId" value="LOCAL-00019" />
+      <option name="project" value="LOCAL" />
+      <updated>1741011662585</updated>
+    </task>
+    <option name="localTasksCounter" value="20" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -277,6 +286,7 @@
     <MESSAGE value="Add main keyboards" />
     <MESSAGE value="Add relaunch button" />
     <MESSAGE value="Add group and remove group edit process" />
-    <option name="LAST_COMMIT_MESSAGE" value="Add group and remove group edit process" />
+    <MESSAGE value="Wellcome message added" />
+    <option name="LAST_COMMIT_MESSAGE" value="Wellcome message added" />
   </component>
 </project>

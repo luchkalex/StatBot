@@ -10,5 +10,6 @@ TIMEZONE = "Europe/Kiev"
 GEMINI_API_KEY_SECONDARY = os.getenv("GEMINI_API_KEY_SECONDARY")
 ACCESS_KEYS = {
     "key1": "stats_account1.csv",
-    "key2": "stats_account2.csv"
+    "key2": "stats_account2.csv",
+    "key3": "stats_account3.csv"
 }

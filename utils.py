@@ -16,9 +16,9 @@ def extract_event_info(text: str, default_topic_id: int, message_sent_time) -> d
 
         phone: phone number (the number may include a + or be in the format +7 995 488-58-59, but it should be output without the + and any separators; if only a number is specified in the message, then it is the number), otherwise null.
     
-        started: true, if the message explicitly states that the number has started working (e.g., 'встал', 'работает', 'зашел', '+') (also consider typos like 'вслат', 'стлоит', 'сашел', etc.), otherwise e.g. ('ошибка' 'новый' 'этот') false. If 'встал' or similar is followed by a question, e.g., 'работает?', 'встал?', then False.
+        started: true, if the message explicitly states that the number has started working (e.g., 'встал', 'работает', 'зашел', '+') (also consider typos and transliteration like 'вслат', 'стлоит', 'сашел', 'vstal' 'zashel' etc.), otherwise e.g. ('ошибка' 'новый' 'этот') false. If 'встал' or similar is followed by a question, e.g., 'работает?', 'встал?', then False.
     
-        stopped: true, if the message explicitly states that the number has stopped working (e.g., 'слетел', 'умер', '-', '#СЛЕТ') (also consider typos like 'стел', 'стелел', etc.), otherwise false. If 'слетел' or similar is followed by a question, e.g., 'слет?', 'минус?', then False.
+        stopped: true, if the message explicitly states that the number has stopped working (e.g., 'слетел', 'умер', '-', '#СЛЕТ') (also consider typos and transliteration like 'стел', 'стелел', 'slet', 'sletel' etc.), otherwise false. If 'слетел' or similar is followed by a question, e.g., 'слет?', 'минус?', then False.
     
         started_time: the time of the started event usually written after specifying an event in HH:MM format, if specified (the number may include typos like '1200', '12^00', '12.00', '12/00', '12 00', etc.), otherwise message time sent.
     
@@ -48,6 +48,8 @@ def extract_event_info(text: str, default_topic_id: int, message_sent_time) -> d
         For example message text is 'встал 2040' and message time is '2025-02-27 19:41:43+02:00' difference between them is 59 minutes > 45 minutes, editing required 
         correct output started_time 19:39
         6. the message can be like 'встал - 21:00' this should be interpreted as started time 21:00, and NOT as stopped time
+        
+        7. the message can be like 'начал грузить и вылет' or 'встал и сразу слетел' should be recognized as started: false stopped: false
         
         Example of a correct response:
         {"phone": "79954885859", "started": true, "stopped": true, "started_time": "12:30", "stopped_time": "12:40", "topic_id": 2}
