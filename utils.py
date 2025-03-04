@@ -31,7 +31,8 @@ def extract_event_info(text: str, default_topic_id: int, message_sent_time) -> d
         2. Return only one JSON for the number. If there is no number but there are entry and exit times, return the times for an empty number with started true and stopped true.
         After creating the JSON, double-check to ensure there is only one entry for one phone, even if it is none.
         
-        3. If the message sending time differs from the time specified in the message more then 45 minutes, editing is required. If difference less then 45 minutes no editing needed 
+        3. Time zone correction IMPORTANT: usually time zones do not differ or differ by 1 hour, if you figured out that time zones differ by 2 hours, double check carefully
+        If the message sending time differs from the time specified in the message more then 45 minutes, editing is required. If difference less then 45 minutes no editing needed 
         You need to find out if there is a time zone difference between the event and the time the message was sent.
         For example, if the message is 'встал 12:00' and the message sending time is '2025-02-27 11:02:02+02:00', this means the time zones differ by minus 1 hour. 
         The correct response in this case would be '11:00'.
