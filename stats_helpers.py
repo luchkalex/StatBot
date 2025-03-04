@@ -264,6 +264,11 @@ async def start_tracking(context: CallbackContext, update=None) -> None:
             state.admin_chat_ids[csv_filename] = set()
         state.admin_chat_ids[csv_filename].add(chat_id)
         logger.info("Добавлен chat_id %s для CSV '%s'", chat_id, csv_filename)
+        # Новая логика: удаляем предыдущие сообщения статистики для данного чата,
+        # чтобы при повторном запуске бот отправил новые сообщения, а не редактировал старые.
+        if csv_filename in state.global_message_ids:
+            if chat_id in state.global_message_ids[csv_filename]:
+                del state.global_message_ids[csv_filename][chat_id]
     state.tracking_active = True
     state.stats.clear()
     state.load_from_csv(csv_filename)

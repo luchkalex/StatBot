@@ -46,6 +46,7 @@ async def start_auth(update: Update, context: CallbackContext) -> int:
     await update.message.reply_text(f"Введите ключ доступа:")
     return ACCESS_KEY_STATE
 
+
 async def process_access_key(update: Update, context: CallbackContext) -> int:
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
@@ -61,6 +62,12 @@ async def process_access_key(update: Update, context: CallbackContext) -> int:
         if csv_filename not in state.admin_chat_ids:
             state.admin_chat_ids[csv_filename] = set()
         state.admin_chat_ids[csv_filename].add(chat_id)
+
+        # Удаляем старые сообщения статистики для этого чата, чтобы отправить новое
+        if csv_filename in state.global_message_ids:
+            if chat_id in state.global_message_ids[csv_filename]:
+                del state.global_message_ids[csv_filename][chat_id]
+
         # Загрузка разрешённых групп для данного ключа
         allowed_groups_all = load_allowed_groups()
         user_allowed_groups = allowed_groups_all.get(access_key, {})  # {group_id: group_name}
@@ -88,6 +95,7 @@ async def process_access_key(update: Update, context: CallbackContext) -> int:
         logger.warning("Авторизация: Пользователь %s ввёл неверный ключ '%s'", user_id, access_key)
         await update.message.reply_text("Неверный ключ доступа. Попробуйте ещё раз:")
         return ACCESS_KEY_STATE
+
 
 login_conv_handler = ConversationHandler(
     entry_points=[CommandHandler('start', start_auth)],
