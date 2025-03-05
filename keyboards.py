@@ -8,9 +8,9 @@ from telegram import ReplyKeyboardMarkup
 
 def get_main_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
-        ["/start", "/stop"],
+        ["/start", "/list_groups"],
         ["/add_group", "/remove_group"],
-        ["/list_groups", "/relaunch_stat"]
+        ["/stop_work", "/restart_work"]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 

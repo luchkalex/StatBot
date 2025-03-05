@@ -17,8 +17,8 @@ async def main() -> None:
 
     # Сначала регистрируем обработчики команд
     app.add_handler(login_conv_handler)
-    app.add_handler(CommandHandler("stop", stop_tracking))
-    app.add_handler(CommandHandler("relaunch_stat", relaunch_stat))
+    app.add_handler(CommandHandler("stop_work", stop_tracking))
+    app.add_handler(CommandHandler("restart_work", relaunch_stat))
     app.add_handler(CommandHandler("list_groups", list_groups))
     # Затем ConversationHandler для диалогов
     app.add_handler(add_group_handler)
