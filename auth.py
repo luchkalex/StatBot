@@ -55,10 +55,6 @@ async def process_access_key(update: Update, context: CallbackContext) -> int:
 
     if access_key in ACCESS_KEYS:
         csv_filename = ACCESS_KEYS[access_key]
-        context.user_data['csv_filename'] = csv_filename
-        context.user_data['access_key'] = access_key  # сохраняем ключ
-        logger.info("Авторизация: Ключ '%s' корректен. Привязан CSV файл: %s", access_key, csv_filename)
-
         # Проверка: если под этим ключом уже залогинено 3 или более пользователей, отклоняем запрос
         if csv_filename not in state.admin_chat_ids:
             state.admin_chat_ids[csv_filename] = set()
@@ -66,6 +62,9 @@ async def process_access_key(update: Update, context: CallbackContext) -> int:
             await update.message.reply_text("Превышено допустимое количество пользователей для этого ключа.")
             return ACCESS_KEY_STATE
 
+        context.user_data['csv_filename'] = csv_filename
+        context.user_data['access_key'] = access_key  # сохраняем ключ
+        logger.info("Авторизация: Ключ '%s' корректен. Привязан CSV файл: %s", access_key, csv_filename)
         state.admin_chat_ids[csv_filename].add(chat_id)
 
         # Загрузка разрешённых групп для данного ключа
