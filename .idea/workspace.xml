@@ -4,9 +4,12 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="c5c855c2-7671-431f-90b7-216cafbd138d" name="Changes" comment="Time zone correction edit">
+    <list default="true" id="c5c855c2-7671-431f-90b7-216cafbd138d" name="Changes" comment="Time zone correction move logic from llm">
+      <change afterPath="$PROJECT_DIR$/wrapper.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/auth.py" beforeDir="false" afterPath="$PROJECT_DIR$/auth.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/groups_commands.py" beforeDir="false" afterPath="$PROJECT_DIR$/groups_commands.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stats_helpers.py" beforeDir="false" afterPath="$PROJECT_DIR$/stats_helpers.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -263,7 +266,15 @@
       <option name="project" value="LOCAL" />
       <updated>1741105548471</updated>
     </task>
-    <option name="localTasksCounter" value="21" />
+    <task id="LOCAL-00021" summary="Time zone correction move logic from llm">
+      <option name="closed" value="true" />
+      <created>1741173318084</created>
+      <option name="number" value="00021" />
+      <option name="presentableId" value="LOCAL-00021" />
+      <option name="project" value="LOCAL" />
+      <updated>1741173318084</updated>
+    </task>
+    <option name="localTasksCounter" value="22" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -296,6 +307,7 @@
     <MESSAGE value="Add group and remove group edit process" />
     <MESSAGE value="Wellcome message added" />
     <MESSAGE value="Time zone correction edit" />
-    <option name="LAST_COMMIT_MESSAGE" value="Time zone correction edit" />
+    <MESSAGE value="Time zone correction move logic from llm" />
+    <option name="LAST_COMMIT_MESSAGE" value="Time zone correction move logic from llm" />
   </component>
 </project>

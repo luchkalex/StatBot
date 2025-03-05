@@ -3,12 +3,15 @@ from telegram import Update
 from telegram.ext import CallbackContext, ConversationHandler, CommandHandler, MessageHandler, filters
 from state import state
 from groups_csv import load_allowed_groups, save_allowed_groups
+from wrapper import require_auth
 
 logger = logging.getLogger(__name__)
 
 # Состояние диалога для добавления группы
 ADD_GROUP = 1
 REMOVE_GROUP = 1
+
+@require_auth
 async def add_group_start(update: Update, context: CallbackContext) -> int:
     await update.message.reply_text("Введите ID группы и название группы через пробел.\nПример: -1002446730600 Whats for test 2")
     return ADD_GROUP
@@ -54,7 +57,7 @@ add_group_handler = ConversationHandler(
     fallbacks=[]
 )
 
-
+@require_auth
 async def remove_group_start(update: Update, context: CallbackContext) -> int:
     await update.message.reply_text("Введите ID группы для удаления.")
     return REMOVE_GROUP

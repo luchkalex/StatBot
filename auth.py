@@ -11,7 +11,7 @@ from groups_csv import load_allowed_groups  # импорт нового моду
 logger = logging.getLogger(__name__)
 
 ACCESS_KEY_STATE = 1
-
+MAX_ACTIVE_USERS = 3
 async def start_auth(update: Update, context: CallbackContext) -> int:
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
@@ -59,14 +59,14 @@ async def process_access_key(update: Update, context: CallbackContext) -> int:
         context.user_data['access_key'] = access_key  # сохраняем ключ
         logger.info("Авторизация: Ключ '%s' корректен. Привязан CSV файл: %s", access_key, csv_filename)
 
+        # Проверка: если под этим ключом уже залогинено 3 или более пользователей, отклоняем запрос
         if csv_filename not in state.admin_chat_ids:
             state.admin_chat_ids[csv_filename] = set()
-        state.admin_chat_ids[csv_filename].add(chat_id)
+        if len(state.admin_chat_ids[csv_filename]) >= MAX_ACTIVE_USERS:
+            await update.message.reply_text("Превышено допустимое количество пользователей для этого ключа.")
+            return ACCESS_KEY_STATE
 
-        # Удаляем старые сообщения статистики для этого чата, чтобы отправить новое
-        if csv_filename in state.global_message_ids:
-            if chat_id in state.global_message_ids[csv_filename]:
-                del state.global_message_ids[csv_filename][chat_id]
+        state.admin_chat_ids[csv_filename].add(chat_id)
 
         # Загрузка разрешённых групп для данного ключа
         allowed_groups_all = load_allowed_groups()
@@ -86,7 +86,7 @@ async def process_access_key(update: Update, context: CallbackContext) -> int:
 
         await send_grouped_stats(context)
         await update.message.reply_text(
-            f"Авторизация успешна.\nСтатистика запущена",
+            "Авторизация успешна.\nСтатистика запущена",
             reply_markup=get_main_keyboard()
         )
         logger.info("Авторизация завершена для пользователя %s (chat_id: %s)", user_id, chat_id)
@@ -95,6 +95,7 @@ async def process_access_key(update: Update, context: CallbackContext) -> int:
         logger.warning("Авторизация: Пользователь %s ввёл неверный ключ '%s'", user_id, access_key)
         await update.message.reply_text("Неверный ключ доступа. Попробуйте ещё раз:")
         return ACCESS_KEY_STATE
+
 
 
 login_conv_handler = ConversationHandler(

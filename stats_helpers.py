@@ -15,6 +15,7 @@ from keyboards import get_daily_stats_keyboard, get_group_stats_keyboard, get_st
 from state import state
 from utils import extract_event_info
 from utils_helpers import ensure_datetime, convert_to_datetime
+from wrapper import require_auth
 
 logger = logging.getLogger(__name__)
 
@@ -250,6 +251,7 @@ async def send_grouped_stats(context: CallbackContext) -> None:
             except Exception as e:
                 logger.error("Ошибка при обновлении/отправке сообщения в чате %s для группы %s: %s", admin_chat_id, g_id, e)
 
+@require_auth
 async def start_tracking(context: CallbackContext, update=None) -> None:
     logger.info("Запуск отслеживания статистики")
     csv_filename = context.user_data.get('csv_filename', 'stats.csv')
@@ -280,7 +282,7 @@ async def start_tracking(context: CallbackContext, update=None) -> None:
             await update.callback_query.message.reply_text("Статистика запущена", reply_markup=get_main_keyboard())
     logger.info("Отслеживание статистики запущено")
 
-
+@require_auth
 async def stop_tracking(update: Update, context: CallbackContext) -> None:
     import pytz
     from datetime import datetime
@@ -347,6 +349,7 @@ async def button_handler(update, context: CallbackContext) -> None:
         await update_global_message(group_id, group_title, context, view_mode="daily")
 
 # В stats_helpers.py
+@require_auth
 async def relaunch_stat(update: Update, context: CallbackContext) -> None:
     # Проверяем, авторизован ли пользователь (наличие csv_filename в context.user_data)
     csv_filename = context.user_data.get('csv_filename')
@@ -356,7 +359,7 @@ async def relaunch_stat(update: Update, context: CallbackContext) -> None:
     # Вызываем существующую функцию старта сбора статистики
     await start_tracking(context, update)
 
-
+@require_auth
 async def message_handler(update: Update, context: CallbackContext) -> None:
     if not state.tracking_active:
         return
