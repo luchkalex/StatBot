@@ -20,9 +20,9 @@ def extract_event_info(text: str, default_topic_id: int, message_sent_time) -> d
     
         stopped: true, if the message explicitly states that the number has stopped working (e.g., 'слетел', 'умер', '-', '#СЛЕТ') (also consider typos and transliteration like 'стел', 'стелел', 'slet', 'sletel' etc.), otherwise false. If 'слетел' or similar is followed by a question, e.g., 'слет?', 'минус?', then False.
     
-        started_time: the time of the started event usually written after specifying an event in HH:MM format, if specified (the number may include typos like '1200', '12^00', '12.00', '12/00', '12 00', etc.), otherwise message time sent.
+        started_time: the time of the started event usually written after specifying an event in HH:MM format, if specified (the number may include typos like '1200', '12^00', '12.00', '12/00', '12 00', etc.), otherwise message time sent in format HH:MM.
     
-        stopped_time: the time of the stopped event usually written after specifying an event in HH:MM format, if specified (the number may include typos like '1200', '12^00', '12.00', '12/00', '12 00', etc.), otherwise message time sent.
+        stopped_time: the time of the stopped event usually written after specifying an event in HH:MM format, if specified (the number may include typos like '1200', '12^00', '12.00', '12/00', '12 00', etc.), otherwise message time sent in format HH:MM.
     
         topic_id: if the text contains 'id: 2', then output 2, otherwise null.
     
@@ -30,27 +30,8 @@ def extract_event_info(text: str, default_topic_id: int, message_sent_time) -> d
         1. If there are simply 4 digits, e.g., 'встал 1122', recognize this as time 11:22. There may be messages with both events specified, e.g., '+ 1150 - 1155', which should be recognized as two events: started 11:50 and stopped 11:55.
         2. Return only one JSON for the number. If there is no number but there are entry and exit times, return the times for an empty number with started true and stopped true.
         After creating the JSON, double-check to ensure there is only one entry for one phone, even if it is none.
-        
-        3. Time zone correction IMPORTANT: usually time zones do not differ or differ by 1 hour, if you figured out that time zones differ by 2 hours, double check carefully
-        If the message sending time differs from the time specified in the message more then 45 minutes, editing is required. If difference less then 45 minutes no editing needed 
-        You need to find out if there is a time zone difference between the event and the time the message was sent.
-        For example, if the message is 'встал 12:00' and the message sending time is '2025-02-27 11:02:02+02:00', this means the time zones differ by minus 1 hour. 
-        The correct response in this case would be '11:00'.
-        
-        4. If the message contains both events You need to find out if there is a time zone difference based on stopped time.
-        e.g., u need figure out time zone difference '+1200 -1400', and the message sending time is '2025-02-27 13:02:02+02:00', 
-        compare the message sending time '2025-02-27 13:02:02+02:00' specifically with the stopped time '1400'. 
-        13:02 minus 14:00 is -0:58 (time zones differ by minus 1 hour). Convert both events to local time, i.e.,
-        Text: '+1200 -1400' output: started_time 11:00 stopped_time 13:00.
-        Only change the hours according to the calculated time zone difference.
-        
-        5. For example message text is 'встал 2039' and message time is '2025-02-27 20:36:43+02:00' difference between them is 3 minutes < 45 minutes no editing needed
-        correct output started_time 20:39
-        For example message text is 'встал 2040' and message time is '2025-02-27 19:41:43+02:00' difference between them is 59 minutes > 45 minutes, editing required 
-        correct output started_time 19:39
-        6. the message can be like 'встал - 21:00' this should be interpreted as started time 21:00, and NOT as stopped time
-        
-        7. the message can be like 'начал грузить и вылет' or 'встал и сразу слетел' should be recognized as started: false stopped: false
+        3. the message can be like 'встал - 21:00' this should be interpreted as started time 21:00, and NOT as stopped time
+        4. the message can be like 'начал грузить и вылет' or 'встал и сразу слетел' should be recognized as started: false stopped: false
         
         Example of a correct response:
         {"phone": "79954885859", "started": true, "stopped": true, "started_time": "12:30", "stopped_time": "12:40", "topic_id": 2}
@@ -108,16 +89,22 @@ def extract_event_info(text: str, default_topic_id: int, message_sent_time) -> d
             # Гарантируем, что значения started и stopped – булевы
             extracted["started"] = bool(extracted.get("started"))
             extracted["stopped"] = bool(extracted.get("stopped"))
+            new_started, new_stopped = adjust_times(
+                extracted["started"],
+                extracted["stopped"],
+                extracted["started_time"],
+                extracted["stopped_time"],
+                message_sent_time
+            )
+
+            extracted["started_time"] = new_started
+            extracted["stopped_time"] = new_stopped
             return extracted
         except Exception as e:
             err_msg = str(e).lower()
             logger.error(f"Ошибка при запросе с ключом {key}: {e}")
-            # Если ошибка связана с исчерпанием лимита, пробуем следующий ключ
-            if any(substr in err_msg for substr in ["limit", "exhausted", "quota"]):
-                logger.info(f"Попытка использовать следующий Gemini API ключ вместо {key}")
-                continue
-            else:
-                break  # Если ошибка не из-за лимита – не пытаемся дальше
+            logger.info(f"Попытка использовать следующий Gemini API ключ вместо {key}")
+            continue
 
     # Если ни один ключ не сработал, возвращаем значения по умолчанию
     return {
@@ -128,5 +115,47 @@ def extract_event_info(text: str, default_topic_id: int, message_sent_time) -> d
         "stopped_time": None,
         "topic_id": default_topic_id
     }
+
+from datetime import datetime, timedelta
+
+from datetime import datetime, timedelta
+
+def adjust_times(started: bool, stopped: bool, started_time: str, stopped_time: str, message_time_send: datetime) -> (str, str):
+    fmt = "%H:%M"
+    # Преобразуем строки в datetime, используя дату и tzinfo из message_time_send
+    try:
+        parsed_started = datetime.combine(message_time_send.date(), datetime.strptime(started_time, fmt).time())
+        parsed_started = parsed_started.replace(tzinfo=message_time_send.tzinfo)
+    except Exception:
+        parsed_started = message_time_send  # если не удаётся распарсить, берем время отправки
+    try:
+        parsed_stopped = datetime.combine(message_time_send.date(), datetime.strptime(stopped_time, fmt).time())
+        parsed_stopped = parsed_stopped.replace(tzinfo=message_time_send.tzinfo)
+    except Exception:
+        parsed_stopped = message_time_send
+
+    adjustment = timedelta(hours=1)
+    threshold = timedelta(minutes=45)
+
+    new_started = parsed_started
+    new_stopped = parsed_stopped
+
+    if started and stopped:
+        diff = parsed_stopped - message_time_send
+        if diff > threshold:
+            new_started = parsed_started - adjustment
+            new_stopped = parsed_stopped - adjustment
+    elif started and not stopped:
+        diff = parsed_started - message_time_send
+        if diff > threshold:
+            new_started = parsed_started - adjustment
+            new_stopped = message_time_send
+    elif not started and stopped:
+        diff = parsed_stopped - message_time_send
+        if diff > threshold:
+            new_started = message_time_send
+            new_stopped = parsed_stopped - adjustment
+
+    return new_started.strftime(fmt), new_stopped.strftime(fmt)
 
 

@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="c5c855c2-7671-431f-90b7-216cafbd138d" name="Changes" comment="Wellcome message added">
+    <list default="true" id="c5c855c2-7671-431f-90b7-216cafbd138d" name="Changes" comment="Time zone correction edit">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils.py" afterDir="false" />
     </list>
@@ -22,6 +22,7 @@
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+    <option name="UPDATE_TYPE" value="REBASE" />
   </component>
   <component name="GitHubPullRequestSearchHistory">{
   &quot;lastFilter&quot;: {
@@ -254,7 +255,15 @@
       <option name="project" value="LOCAL" />
       <updated>1741011662585</updated>
     </task>
-    <option name="localTasksCounter" value="20" />
+    <task id="LOCAL-00020" summary="Time zone correction edit">
+      <option name="closed" value="true" />
+      <created>1741105548471</created>
+      <option name="number" value="00020" />
+      <option name="presentableId" value="LOCAL-00020" />
+      <option name="project" value="LOCAL" />
+      <updated>1741105548471</updated>
+    </task>
+    <option name="localTasksCounter" value="21" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -286,6 +295,7 @@
     <MESSAGE value="Add relaunch button" />
     <MESSAGE value="Add group and remove group edit process" />
     <MESSAGE value="Wellcome message added" />
-    <option name="LAST_COMMIT_MESSAGE" value="Wellcome message added" />
+    <MESSAGE value="Time zone correction edit" />
+    <option name="LAST_COMMIT_MESSAGE" value="Time zone correction edit" />
   </component>
 </project>
