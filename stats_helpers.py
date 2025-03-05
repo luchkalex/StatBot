@@ -252,7 +252,7 @@ async def send_grouped_stats(context: CallbackContext) -> None:
                 logger.error("Ошибка при обновлении/отправке сообщения в чате %s для группы %s: %s", admin_chat_id, g_id, e)
 
 @require_auth
-async def start_tracking(context: CallbackContext, update=None) -> None:
+async def start_tracking(update: Update, context: CallbackContext) -> None:
     logger.info("Запуск отслеживания статистики")
     csv_filename = context.user_data.get('csv_filename', 'stats.csv')
     chat_id = None
@@ -357,7 +357,7 @@ async def relaunch_stat(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text("Вы не авторизованы. Пожалуйста, используйте /start для авторизации.")
         return
     # Вызываем существующую функцию старта сбора статистики
-    await start_tracking(context, update)
+    await start_tracking(update, context)
 
 @require_auth
 async def message_handler(update: Update, context: CallbackContext) -> None:

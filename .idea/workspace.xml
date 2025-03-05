@@ -6,7 +6,7 @@
   <component name="ChangeListManager">
     <list default="true" id="c5c855c2-7671-431f-90b7-216cafbd138d" name="Changes" comment="Max users per key added&#10;Not auth users not allowed to send commands">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/auth.py" beforeDir="false" afterPath="$PROJECT_DIR$/auth.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stats_helpers.py" beforeDir="false" afterPath="$PROJECT_DIR$/stats_helpers.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
