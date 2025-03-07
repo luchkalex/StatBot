@@ -361,6 +361,10 @@ async def relaunch_stat(update: Update, context: CallbackContext) -> None:
 
 @require_auth
 async def message_handler(update: Update, context: CallbackContext) -> None:
+    # Если пользователь не авторизован (нет ключа), тоже ничего не делаем
+    if not context.user_data.get("access_key"):
+        return
+
     if not state.tracking_active:
         return
 

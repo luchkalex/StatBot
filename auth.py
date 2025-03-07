@@ -48,6 +48,11 @@ async def start_auth(update: Update, context: CallbackContext) -> int:
 
 
 async def process_access_key(update: Update, context: CallbackContext) -> int:
+    # Если сообщение пришло не из приватного чата, игнорируем его
+    if update.effective_chat.type != "private":
+        logger.info("Получено сообщение в группе без авторизации")
+        return ACCESS_KEY_STATE
+
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
     access_key = update.message.text.strip()
@@ -59,7 +64,7 @@ async def process_access_key(update: Update, context: CallbackContext) -> int:
         if csv_filename not in state.admin_chat_ids:
             state.admin_chat_ids[csv_filename] = set()
         if len(state.admin_chat_ids[csv_filename]) >= MAX_ACTIVE_USERS:
-            await update.message.reply_text("Превышено допустимое количество пользователей для этого ключа.")
+            await update.message.reply_text("Превышено допустимое количество пользователей для этого ключа. Введите другой")
             return ACCESS_KEY_STATE
 
         context.user_data['csv_filename'] = csv_filename
