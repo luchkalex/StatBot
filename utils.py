@@ -16,9 +16,9 @@ def extract_event_info(text: str, default_topic_id: int, message_sent_time) -> d
 
         phone: phone number (the number may include a + or be in the format +7 995 488-58-59, but it should be output without the + and any separators; if only a number is specified in the message, then it is the number), otherwise null.
     
-        started: true, if the message explicitly states that the number has started working (e.g., 'встал', 'работает', 'зашел', '+') (also consider typos and transliteration like 'вслат', 'стлоит', 'сашел', 'vstal' 'zashel' etc.), otherwise e.g. ('ошибка' 'новый' 'этот') false. If 'встал' or similar is followed by a question, e.g., 'работает?', 'встал?', then False.
+        started: true, if the message explicitly states that the number has started working (e.g., 'встал', 'работает', 'зашел', '+ time' (if just '+' without anything then false)) (also consider typos (if u see that u don't understand this world try to guess typo) and transliteration like 'вслат', 'стлоит', 'сашел', 'вхлд' 'vstal' 'zashel' etc.), otherwise e.g. ('ошибка' 'новый' 'этот') false. If 'встал' or similar is followed by a question, e.g., 'работает?', 'встал?' then False.
     
-        stopped: true, if the message explicitly states that the number has stopped working (e.g., 'слетел', 'умер', '-', '#СЛЕТ') (also consider typos and transliteration like 'стел', 'стелел', 'slet', 'sletel' etc.), otherwise false. If 'слетел' or similar is followed by a question, e.g., 'слет?', 'минус?', then False.
+        stopped: true, if the message explicitly states that the number has stopped working (e.g., 'слетел', 'умер', '- time' (if just '-' without anything then false), '#СЛЕТ') (also consider typos (if u see that u don't understand this world try to guess typo) and transliteration like 'стел', 'стелел', 'slet', 'sletel' etc.), otherwise false. If 'слетел' or similar is followed by a question, e.g., 'слет?', 'минус?', then False. but if something is following like 'слет можно новый?' it is true and questions is about new number and not about stopped
     
         started_time: the time of the started event usually written after specifying an event in HH:MM format, if specified (the number may include typos like '1200', '12^00', '12.00', '12/00', '12 00', etc.), otherwise message time sent in format HH:MM.
     

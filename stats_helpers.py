@@ -85,7 +85,11 @@ async def update_global_message(
             topic_lines = []
             topic_total_seconds = 0
             topic_count = 0
-            sorted_entries = sorted(topics[tid], key=lambda item: ensure_datetime(item[1].get("started")))
+            sorted_entries = sorted(
+                topics[tid],
+                key=lambda item: ensure_datetime(item[1].get("started")).time()
+                if ensure_datetime(item[1].get("started")) else datetime.min.time()
+            )
             for phone, rec in sorted_entries:
                 topic_lines.append(format_record(rec, phone))
                 if rec.get("downtime"):
@@ -115,7 +119,12 @@ async def update_global_message(
         # Здесь также фильтруем записи по csv_filename
         daily_records = [(phone, rec) for (file_key, g_id, _, phone), rec in state.stats.items()
                          if file_key == csv_filename and g_id == group_id]
-        daily_sorted = sorted(daily_records, key=lambda item: ensure_datetime(item[1].get("started")))
+        daily_sorted = sorted(
+            daily_records,
+            key=lambda item: ensure_datetime(item[1].get("started")).time()
+            if ensure_datetime(item[1].get("started")) else datetime.min.time()
+        )
+
         for phone, rec in daily_sorted:
             lines.append(format_record(rec, phone))
             if rec.get("downtime"):
@@ -359,11 +368,7 @@ async def relaunch_stat(update: Update, context: CallbackContext) -> None:
     # Вызываем существующую функцию старта сбора статистики
     await start_tracking(update, context)
 
-@require_auth
 async def message_handler(update: Update, context: CallbackContext) -> None:
-    # Если пользователь не авторизован (нет ключа), тоже ничего не делаем
-    if not context.user_data.get("access_key"):
-        return
 
     if not state.tracking_active:
         return
@@ -427,31 +432,37 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
             logger.info(f"Нет номера для события в теме {extracted_topic_id} группы {group_id}.")
             return
 
-    # Получаем список CSV-файлов (аккаунтов), к которым привязана данная группа
+        # Получаем список CSV‑файлов (аккаунтов), к которым привязана данная группа
     csv_filenames = state.group_to_keys.get(group_id, set())
     for csv_filename in csv_filenames:
         key = (csv_filename, group_id, extracted_topic_id, phone_extracted)
-        record = state.stats.get(key, {})
+        record = state.stats.get(key)
 
-        if started_flag:
-            record["started"] = started_time_str
-            record["stopped"] = None
-            record["downtime"] = None
+        # Если сообщение содержит событие "встал" и записи ещё нет, создаём новую запись
+        if started_flag and record is None:
+            record = {"started": started_time_str, "stopped": None, "downtime": None}
 
+        # Если сообщение содержит событие "слетел"
         if stopped_flag:
-            if record.get("started"):
+            if record and record.get("started"):
+                # Обновляем существующую запись, не перезаписывая время "встал"
                 record["stopped"] = stopped_time_str
-                started_time = convert_to_datetime(record.get("started"))
-                stopped_time = convert_to_datetime(record.get("stopped"))
-                if started_time and stopped_time:
-                    record["downtime"] = stopped_time - started_time
+                st_time = convert_to_datetime(record["started"])
+                sp_time = convert_to_datetime(record["stopped"])
+                if st_time and sp_time:
+                    record["downtime"] = sp_time - st_time
                 else:
                     record["downtime"] = None
             else:
+                # Если записи нет, пытаемся найти подходящую запись по номеру,
+                # где зафиксировано событие "встал", но отсутствует "слетел"
                 candidate_key = None
                 candidate_record = None
                 for (f, g, tid, ph), rec in state.stats.items():
-                    if f == csv_filename and g == group_id and tid == extracted_topic_id and rec.get("started") and rec.get("stopped") is None:
+                    if (
+                            f == csv_filename and g == group_id and tid == extracted_topic_id and
+                            rec.get("started") and not rec.get("stopped")
+                    ):
                         if candidate_record is None or rec["started"] > candidate_record["started"]:
                             candidate_key = (f, g, tid, ph)
                             candidate_record = rec
@@ -461,7 +472,17 @@ async def message_handler(update: Update, context: CallbackContext) -> None:
                 key = candidate_key
                 record = candidate_record
                 record["stopped"] = stopped_time_str
-                record["downtime"] = record["stopped"] - record["started"]
+                st_time = convert_to_datetime(record["started"])
+                sp_time = convert_to_datetime(record["stopped"])
+                if st_time and sp_time:
+                    record["downtime"] = sp_time - st_time
+                else:
+                    record["downtime"] = None
+
+        # Если сообщение содержит только событие "встал" и запись уже существует, не затираем значение "started"
+        if started_flag and record and record.get("started"):
+            # Можно оставить запись без изменений или обновить, если нужно сверять время (например, если изменилось время "встал")
+            pass
 
         state.stats[key] = record
 
